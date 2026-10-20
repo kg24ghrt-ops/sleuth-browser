@@ -63,7 +63,6 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     private var lastHistoryUrl: String = ""
     private var lastHistoryAt: Long = 0L
     private var extractionToken: Int = 0
-    private var timersPaused: Boolean = false
     private var lastDesktopMode: Boolean = false
     private var armedCaseCache: CaseFile? = null
     private var tabSheet: BottomSheetDialog? = null
@@ -147,10 +146,6 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
     override fun onResume() {
         super.onResume()
-        if (timersPaused) {
-            WebView.resumeTimers()
-            timersPaused = false
-        }
         tabManager.current()?.webView?.onResume()
         lastDesktopMode = Sleuth.settings.desktopMode
         applyWebSettings()
@@ -161,12 +156,9 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     override fun onPause() {
         super.onPause()
         if (!Sleuth.settings.pauseInBackground) return
+        // pages stop running while the app is out of sight
         for (tab in tabManager.tabsSnapshot()) {
             tab.webView.onPause()
-        }
-        if (!timersPaused) {
-            WebView.pauseTimers()
-            timersPaused = true
         }
     }
 

@@ -12,8 +12,10 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.sleuth.browser.R
 import com.sleuth.browser.Sleuth
+import com.sleuth.browser.SleuthIO
 import com.sleuth.browser.browser.BrowserState
 import com.sleuth.browser.browser.MediaSaver
+import com.sleuth.browser.data.CaseFile
 import com.sleuth.browser.data.Evidence
 import com.sleuth.browser.data.EvidenceType
 import com.sleuth.browser.databinding.ActivityCaseDetailBinding
@@ -89,7 +91,7 @@ class CaseDetailActivity : AppCompatActivity() {
         }
     }
 
-    private data class CaseBundle(val file: com.sleuth.browser.data.CaseFile?, val items: List<Evidence>)
+    private data class CaseBundle(val file: CaseFile?, val items: List<Evidence>)
 
     private fun addNote() {
         showTextDialog(getString(R.string.action_add_note), getString(R.string.note_hint), "") { text ->
