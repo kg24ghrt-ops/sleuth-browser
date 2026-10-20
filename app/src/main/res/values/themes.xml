@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Sleuth" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/amber</item>
+        <item name="colorOnPrimary">@color/black</item>
+        <item name="colorPrimaryContainer">@color/amber_dim</item>
+        <item name="colorOnPrimaryContainer">@color/paper</item>
+        <item name="colorSecondary">@color/signal_blue</item>
+        <item name="colorOnSecondary">@color/black</item>
+        <item name="colorTertiary">@color/signal_green</item>
+        <item name="colorOnTertiary">@color/black</item>
+        <item name="android:colorBackground">@color/noir</item>
+        <item name="colorOnBackground">@color/paper</item>
+        <item name="colorSurface">@color/noir_surface</item>
+        <item name="colorOnSurface">@color/paper</item>
+        <item name="colorSurfaceVariant">@color/noir_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/paper_dim</item>
+        <item name="colorOutline">@color/noir_outline</item>
+        <item name="colorError">@color/signal_red</item>
+        <item name="colorOnError">@color/white</item>
+        <item name="android:statusBarColor">@color/noir</item>
+        <item name="android:navigationBarColor">@color/noir</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="preferenceTheme">@style/PreferenceThemeOverlay</item>
+    </style>
+
+    <style name="SleuthToolbar" parent="Widget.Material3.Toolbar">
+        <item name="android:background">@color/noir</item>
+        <item name="titleTextColor">@color/paper</item>
+    </style>
+</resources>

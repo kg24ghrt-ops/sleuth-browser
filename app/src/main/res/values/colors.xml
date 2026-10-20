@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="noir">#0D1117</color>
+    <color name="noir_surface">#151B23</color>
+    <color name="noir_surface_variant">#1E2632</color>
+    <color name="noir_outline">#2C3644</color>
+    <color name="paper">#E7EAF0</color>
+    <color name="paper_dim">#93A0B4</color>
+    <color name="amber">#E0A43C</color>
+    <color name="amber_dim">#8A6524</color>
+    <color name="signal_red">#D1495B</color>
+    <color name="signal_green">#3FA796</color>
+    <color name="signal_blue">#4A90D9</color>
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+</resources>

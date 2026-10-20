@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.textfield.TextInputLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/inputLayout"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="20dp"
+    android:hint="@string/note_hint">
+
+    <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/inputField"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="textMultiLine"
+        android:maxLines="6"
+        android:minLines="2"
+        android:textColor="@color/paper" />
+</com.google.android.material.textfield.TextInputLayout>
