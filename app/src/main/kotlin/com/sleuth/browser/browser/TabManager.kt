@@ -1,6 +1,7 @@
 package com.sleuth.browser.browser
 
 import android.content.Context
+import android.view.ViewGroup
 import android.webkit.WebView
 
 class BrowserTab(val id: Long, val webView: WebView) {
@@ -55,6 +56,7 @@ class TabManager(
     fun closeAt(index: Int) {
         val tab = tabs.getOrNull(index) ?: return
         tabs.removeAt(index)
+        detach(tab)
         tab.webView.stopLoading()
         tab.webView.destroy()
         if (currentIndex >= tabs.size) currentIndex = tabs.size - 1
@@ -63,10 +65,15 @@ class TabManager(
 
     fun destroyAll() {
         for (tab in tabs) {
+            detach(tab)
             tab.webView.stopLoading()
             tab.webView.destroy()
         }
         tabs.clear()
         currentIndex = -1
+    }
+
+    private fun detach(tab: BrowserTab) {
+        (tab.webView.parent as? ViewGroup)?.removeView(tab.webView)
     }
 }
