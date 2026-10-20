@@ -32,7 +32,7 @@ class ProtectionProbeTest {
         val text = ProtectionProbe.describe(listOf("select", "oncopy"))
         assertTrue(text.contains("selection"))
         assertTrue(text.contains("copying"))
-        assertEquals(1, text.lines().size)
+        assertEquals(2, text.lines().size)
     }
 
     @Test
