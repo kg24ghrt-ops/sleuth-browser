@@ -61,6 +61,29 @@
             app:title="@string/pref_save_shots" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="@string/pref_speed">
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="lite_mode"
+            app:summary="@string/pref_lite_mode_summary"
+            app:title="@string/pref_lite_mode" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="prewarm"
+            app:summary="@string/pref_prewarm_summary"
+            app:title="@string/pref_prewarm" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="pause_background"
+            app:summary="@string/pref_pause_summary"
+            app:title="@string/pref_pause" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="safe_browsing"
+            app:summary="@string/pref_safe_browsing_summary"
+            app:title="@string/pref_safe_browsing" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="@string/pref_data">
         <Preference
             app:key="clear_history"

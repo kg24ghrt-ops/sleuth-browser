@@ -64,35 +64,47 @@ class CaseDetailActivity : AppCompatActivity() {
     }
 
     private fun refresh() {
-        val file = Sleuth.db.caseById(caseId)
-        if (file == null) {
-            finish()
-            return
-        }
-        binding.caseTitle.text = file.title.ifBlank { getString(R.string.action_new_case) }
-        binding.caseCode.text = file.code
-        val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(file.createdAt))
-        binding.caseMeta.text = "$stamp  ·  ${Sleuth.db.evidenceCount(file.id)} items"
-        binding.caseNotes.text = file.notes
-        binding.caseNotes.visibility = if (file.notes.isBlank()) View.GONE else View.VISIBLE
-        binding.btnStakeout.setText(if (file.stakeout) R.string.action_disarm else R.string.action_stakeout)
+        val id = caseId
+        SleuthIO.submit({
+            val file = Sleuth.db.caseById(id)
+            val items = if (file == null) emptyList() else Sleuth.db.evidenceForCase(id)
+            CaseBundle(file, items)
+        }) { bundle ->
+            if (isFinishing || isDestroyed) return@submit
+            val file = bundle.file
+            if (file == null) {
+                finish()
+                return@submit
+            }
+            binding.caseTitle.text = file.title.ifBlank { getString(R.string.action_new_case) }
+            binding.caseCode.text = file.code
+            val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(file.createdAt))
+            binding.caseMeta.text = "$stamp  ·  ${bundle.items.size} items"
+            binding.caseNotes.text = file.notes
+            binding.caseNotes.visibility = if (file.notes.isBlank()) View.GONE else View.VISIBLE
+            binding.btnStakeout.setText(if (file.stakeout) R.string.action_disarm else R.string.action_stakeout)
 
-        val items = Sleuth.db.evidenceForCase(caseId)
-        adapter.submit(items)
-        binding.emptyText.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+            adapter.submit(bundle.items)
+            binding.emptyText.visibility = if (bundle.items.isEmpty()) View.VISIBLE else View.GONE
+        }
     }
+
+    private data class CaseBundle(val file: com.sleuth.browser.data.CaseFile?, val items: List<Evidence>)
 
     private fun addNote() {
         showTextDialog(getString(R.string.action_add_note), getString(R.string.note_hint), "") { text ->
             if (text.isBlank()) return@showTextDialog
-            Sleuth.repository.addEvidence(
-                caseId,
-                EvidenceType.NOTE,
-                text.take(60),
-                "",
-                text,
-                ""
-            )
+            val note = text
+            SleuthIO.execute {
+                Sleuth.repository.addEvidence(
+                    caseId,
+                    EvidenceType.NOTE,
+                    note.take(60),
+                    "",
+                    note,
+                    ""
+                )
+            }
             refresh()
         }
     }
@@ -105,14 +117,16 @@ class CaseDetailActivity : AppCompatActivity() {
         }
         val title = BrowserState.currentTitle.ifBlank { url }
         val excerpt = BrowserState.currentExcerpt.take(1200)
-        Sleuth.repository.addEvidence(
-            caseId,
-            EvidenceType.PAGE,
-            title,
-            url,
-            excerpt,
-            ""
-        )
+        SleuthIO.execute {
+            Sleuth.repository.addEvidence(
+                caseId,
+                EvidenceType.PAGE,
+                title,
+                url,
+                excerpt,
+                ""
+            )
+        }
         refresh()
     }
 
@@ -144,21 +158,33 @@ class CaseDetailActivity : AppCompatActivity() {
     }
 
     private fun exportReport() {
-        val file = Sleuth.db.caseById(caseId) ?: return
-        val items = Sleuth.repository.reportEvidence(caseId)
-        val html = ReportExporter.buildHtml(file.title, file.code, file.notes, file.createdAt, items)
-        val target = File(cacheDir, "${file.code}.html")
-        if (!MediaSaver.writeText(target, html)) return
-        startActivity(MediaSaver.shareFile(this, target, "text/html"))
+        val id = caseId
+        SleuthIO.submit({
+            val file = Sleuth.db.caseById(id) ?: return@submit null
+            val items = Sleuth.repository.reportEvidence(id)
+            ReportExporter.buildHtml(file.title, file.code, file.notes, file.createdAt, items)
+        }) { html ->
+            if (html == null) return@submit
+            val file = Sleuth.db.caseById(id) ?: return@submit
+            val target = File(cacheDir, "${file.code}.html")
+            if (!MediaSaver.writeText(target, html)) return@submit
+            startActivity(MediaSaver.shareFile(this, target, "text/html"))
+        }
     }
 
     private fun exportJson() {
-        val file = Sleuth.db.caseById(caseId) ?: return
-        val items = Sleuth.repository.reportEvidence(caseId)
-        val json = ReportExporter.buildJson(file.title, file.code, file.notes, file.createdAt, items)
-        val target = File(cacheDir, "${file.code}.json")
-        if (!MediaSaver.writeText(target, json)) return
-        startActivity(MediaSaver.shareFile(this, target, "application/json"))
+        val id = caseId
+        SleuthIO.submit({
+            val file = Sleuth.db.caseById(id) ?: return@submit null
+            val items = Sleuth.repository.reportEvidence(id)
+            ReportExporter.buildJson(file.title, file.code, file.notes, file.createdAt, items)
+        }) { json ->
+            if (json == null) return@submit
+            val file = Sleuth.db.caseById(id) ?: return@submit
+            val target = File(cacheDir, "${file.code}.json")
+            if (!MediaSaver.writeText(target, json)) return@submit
+            startActivity(MediaSaver.shareFile(this, target, "application/json"))
+        }
     }
 
     private fun deleteCase() {
@@ -228,7 +254,14 @@ class CaseDetailActivity : AppCompatActivity() {
             )
             if (item.path.isNotBlank() && File(item.path).exists()) {
                 view.evidenceThumb.visibility = View.VISIBLE
-                view.evidenceThumb.setImageBitmap(MediaSaver.decodeSampled(item.path, 160))
+                view.evidenceThumb.tag = item.id
+                view.evidenceThumb.setImageBitmap(null)
+                // thumbnails are decoded off the browser thread so the list stays smooth
+                SleuthIO.submit({ MediaSaver.decodeSampled(item.path, 160) }) { bitmap ->
+                    if (bitmap != null && view.evidenceThumb.tag == item.id) {
+                        view.evidenceThumb.setImageBitmap(bitmap)
+                    }
+                }
             } else {
                 view.evidenceThumb.visibility = View.GONE
             }

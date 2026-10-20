@@ -8,8 +8,13 @@ import org.json.JSONObject
  */
 object JsTools {
 
+    /**
+     * Pulls the visible text of a page. The slice happens inside the page so
+     * a huge document never has to travel across the bridge.
+     */
     fun extractTextScript(): String =
-        "(function(){try{return document.body?document.body.innerText:'';}catch(e){return '';}})();"
+        "(function(){try{var t=document.body?document.body.innerText:'';" +
+            "return t.length>2000?t.substring(0,2000):t;}catch(e){return '';}})();"
 
     fun findScript(query: String): String {
         val literal = JSONObject.quote(query)

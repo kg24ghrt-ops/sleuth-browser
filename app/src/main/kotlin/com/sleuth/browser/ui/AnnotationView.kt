@@ -108,6 +108,11 @@ class AnnotationView @JvmOverloads constructor(
 
     private fun rebuildWorking() {
         val source = original ?: return
+        if (redactions.isEmpty()) {
+            // nothing to hide, so there is no reason to copy the whole bitmap
+            working = source
+            return
+        }
         val copy = source.copy(Bitmap.Config.ARGB_8888, true) ?: return
         for (region in redactions) {
             pixelate(copy, region)

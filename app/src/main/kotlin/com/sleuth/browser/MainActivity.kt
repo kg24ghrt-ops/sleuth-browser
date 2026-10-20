@@ -41,6 +41,8 @@ import com.sleuth.browser.browser.SearchEngines
 import com.sleuth.browser.browser.SilentGuard
 import com.sleuth.browser.browser.TabManager
 import com.sleuth.browser.browser.UrlNormalizer
+import com.sleuth.browser.browser.WebViewFactory
+import com.sleuth.browser.data.CaseFile
 import com.sleuth.browser.data.EvidenceType
 import com.sleuth.browser.databinding.ActivityMainBinding
 import com.sleuth.browser.databinding.ItemTabBinding
@@ -58,6 +60,12 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     private val handler = Handler(Looper.getMainLooper())
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
     private var lastRecordedUrl: String = ""
+    private var lastHistoryUrl: String = ""
+    private var lastHistoryAt: Long = 0L
+    private var extractionToken: Int = 0
+    private var timersPaused: Boolean = false
+    private var lastDesktopMode: Boolean = false
+    private var armedCaseCache: CaseFile? = null
     private var tabSheet: BottomSheetDialog? = null
 
     private val fileChooserLauncher =
@@ -139,7 +147,47 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
     override fun onResume() {
         super.onResume()
+        if (timersPaused) {
+            WebView.resumeTimers()
+            timersPaused = false
+        }
+        tabManager.current()?.webView?.onResume()
+        lastDesktopMode = Sleuth.settings.desktopMode
+        applyWebSettings()
+        refreshArmedCase()
         updateChrome()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (!Sleuth.settings.pauseInBackground) return
+        for (tab in tabManager.tabsSnapshot()) {
+            tab.webView.onPause()
+        }
+        if (!timersPaused) {
+            WebView.pauseTimers()
+            timersPaused = true
+        }
+    }
+
+    /** Pushes the current preferences into every open tab. */
+    private fun applyWebSettings() {
+        val settings = Sleuth.settings
+        for (tab in tabManager.tabsSnapshot()) {
+            val webSettings = tab.webView.settings
+            webSettings.blockNetworkImage = settings.liteMode
+            webSettings.textZoom = settings.fontScale
+            webSettings.javaScriptEnabled = settings.javascript
+            webSettings.userAgentString =
+                if (settings.desktopMode) WebViewFactory.DESKTOP_UA else WebViewFactory.MOBILE_UA
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                webSettings.safeBrowsingEnabled = settings.safeBrowsing
+            }
+        }
+    }
+
+    private fun refreshArmedCase() {
+        armedCaseCache = Sleuth.repository.armedCase()
     }
 
     // ------------------------------------------------------------------ chrome
@@ -238,7 +286,10 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
                 R.id.action_desktop_site -> {
                     Sleuth.settings.desktopMode = !Sleuth.settings.desktopMode
-                    recreateTabs()
+                    lastDesktopMode = Sleuth.settings.desktopMode
+                    applyWebSettings()
+                    // only the page in front is reloaded, the other tabs stay as they are
+                    tabManager.current()?.webView?.reload()
                     true
                 }
 
@@ -346,26 +397,6 @@ class MainActivity : AppCompatActivity(), BrowserHost {
             Toast.LENGTH_SHORT
         ).show()
         updateChrome()
-    }
-
-    private fun recreateTabs() {
-        val urls = tabManager.allUrls()
-        tabManager.destroyAll()
-        binding.webContainer.removeAllViews()
-        for (url in urls) {
-            openInNewTab(url, switchTo = false)
-        }
-        if (tabManager.size == 0) {
-            openInNewTab(Sleuth.settings.homeUrl)
-        } else {
-            tabManager.select(0)
-            val first = tabManager.current()
-            if (first != null) {
-                binding.webContainer.removeAllViews()
-                binding.webContainer.addView(first.webView)
-            }
-            updateChrome()
-        }
     }
 
     // -------------------------------------------------------------------- tabs
@@ -547,7 +578,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
     override fun onPageStarted(url: String, title: String) {
         binding.errorText.visibility = View.GONE
-        if (!binding.urlBar.hasFocus()) {
+        if (!binding.urlBar.hasFocus() && binding.urlBar.text?.toString() != url) {
             binding.urlBar.setText(url)
         }
     }
@@ -557,15 +588,22 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         val tab = tabManager.current()
         tab?.url = url
         tab?.title = title
-        if (!binding.urlBar.hasFocus()) {
+        if (!binding.urlBar.hasFocus() && binding.urlBar.text?.toString() != url) {
             binding.urlBar.setText(url)
         }
         binding.titleText.text = title.ifBlank { url }
         BrowserState.currentUrl = url
         BrowserState.currentTitle = title
 
-        if (!Sleuth.settings.incognito) {
-            Sleuth.db.recordVisit(url, title)
+        val now = System.currentTimeMillis()
+        val duplicate = url == lastHistoryUrl && now - lastHistoryAt < 2000L
+        if (!duplicate) {
+            lastHistoryUrl = url
+            lastHistoryAt = now
+            if (!Sleuth.settings.incognito) {
+                // the write must never hold up the page
+                SleuthIO.execute { Sleuth.db.recordVisit(url, title) }
+            }
         }
         recordVisitForCase(url, title)
         updateChrome()
@@ -573,20 +611,25 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
     private fun recordVisitForCase(url: String, title: String) {
         if (Sleuth.settings.incognito) return
-        val case = Sleuth.repository.armedCase() ?: return
+        val case = armedCaseCache ?: return
         if (url == lastRecordedUrl) return
         lastRecordedUrl = url
+        val token = ++extractionToken
         val webView = tabManager.current()?.webView ?: return
         webView.evaluateJavascript(JsTools.extractTextScript()) { raw ->
+            if (token != extractionToken) return@evaluateJavascript
             val text = JsTools.decodeString(raw).trim().take(1500)
-            Sleuth.repository.addEvidence(
-                case.id,
-                EvidenceType.PAGE,
-                title.ifBlank { url },
-                url,
-                text,
-                ""
-            )
+            val note = text
+            SleuthIO.execute {
+                Sleuth.repository.addEvidence(
+                    case.id,
+                    EvidenceType.PAGE,
+                    title.ifBlank { url },
+                    url,
+                    note,
+                    ""
+                )
+            }
         }
     }
 
@@ -661,6 +704,9 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         }
         val webView = tabManager.current()?.webView
         if (webView != null) {
+            // drop whatever is still downloading, the new page matters now
+            webView.stopLoading()
+            extractionToken++
             webView.loadUrl(target)
         } else {
             openInNewTab(target)
@@ -674,7 +720,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         binding.btnBack.alpha = if (binding.btnBack.isEnabled) 1f else 0.35f
         binding.btnForward.alpha = if (binding.btnForward.isEnabled) 1f else 0.35f
 
-        val armed = Sleuth.repository.armedCase()
+        val armed = armedCaseCache
         binding.caseChip.text = if (armed != null) {
             armed.code + " ▸"
         } else {

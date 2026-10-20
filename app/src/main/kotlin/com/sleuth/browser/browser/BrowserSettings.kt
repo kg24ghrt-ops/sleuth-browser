@@ -44,6 +44,25 @@ class BrowserSettings(context: Context) {
         get() = prefs.getBoolean(KEY_SAVE_GALLERY, false)
         set(value) = prefs.edit().putBoolean(KEY_SAVE_GALLERY, value).apply()
 
+    /** Lite mode skips images, video, audio and fonts so pages load much faster. */
+    var liteMode: Boolean
+        get() = prefs.getBoolean(KEY_LITE_MODE, false)
+        set(value) = prefs.edit().putBoolean(KEY_LITE_MODE, value).apply()
+
+    /** Start the browser engine while the app is still opening. */
+    var prewarm: Boolean
+        get() = prefs.getBoolean(KEY_PREWARM, true)
+        set(value) = prefs.edit().putBoolean(KEY_PREWARM, value).apply()
+
+    /** Stop running pages when the app is not in front. */
+    var pauseInBackground: Boolean
+        get() = prefs.getBoolean(KEY_PAUSE_BACKGROUND, true)
+        set(value) = prefs.edit().putBoolean(KEY_PAUSE_BACKGROUND, value).apply()
+
+    var safeBrowsing: Boolean
+        get() = prefs.getBoolean(KEY_SAFE_BROWSING, true)
+        set(value) = prefs.edit().putBoolean(KEY_SAFE_BROWSING, value).apply()
+
     var fontScale: Int
         get() = prefs.getInt(KEY_FONT_SCALE, 100)
         set(value) = prefs.edit().putInt(KEY_FONT_SCALE, value).apply()
@@ -88,6 +107,10 @@ class BrowserSettings(context: Context) {
         const val KEY_GEOLOCATION = "geolocation"
         const val KEY_DESKTOP_MODE = "desktop_mode"
         const val KEY_SAVE_GALLERY = "save_to_gallery"
+        const val KEY_LITE_MODE = "lite_mode"
+        const val KEY_PREWARM = "prewarm"
+        const val KEY_PAUSE_BACKGROUND = "pause_background"
+        const val KEY_SAFE_BROWSING = "safe_browsing"
         const val KEY_FONT_SCALE = "font_scale"
         const val KEY_INCOGNITO = "incognito"
         const val KEY_ARMED_CASE = "armed_case"

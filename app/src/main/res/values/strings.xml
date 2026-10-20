@@ -136,6 +136,15 @@
     <string name="pref_save_shots">Save captures to gallery</string>
     <string name="pref_save_shots_summary">Also keep a copy in Pictures/Sleuth</string>
     <string name="pref_data">Data</string>
+    <string name="pref_speed">Speed</string>
+    <string name="pref_lite_mode">Lite mode</string>
+    <string name="pref_lite_mode_summary">Skip images, video, audio and fonts so pages load much faster</string>
+    <string name="pref_prewarm">Warm up on start</string>
+    <string name="pref_prewarm_summary">Start the browser engine while the app is opening</string>
+    <string name="pref_pause">Pause in background</string>
+    <string name="pref_pause_summary">Stop running pages when the app is not in front</string>
+    <string name="pref_safe_browsing">Safe browsing</string>
+    <string name="pref_safe_browsing_summary">Check downloads against the Google list</string>
     <string name="pref_clear_history">Clear history</string>
     <string name="pref_clear_cache">Clear cache</string>
     <string name="pref_clear_all">Wipe every record</string>

@@ -8,6 +8,7 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import com.sleuth.browser.R
 import com.sleuth.browser.Sleuth
+import com.sleuth.browser.SleuthIO
 import com.sleuth.browser.databinding.ActivitySettingsBinding
 import java.io.File
 
@@ -46,38 +47,43 @@ class SettingsActivity : AppCompatActivity() {
             }
 
             findPreference<Preference>("clear_history")?.setOnPreferenceClickListener {
-                Sleuth.db.clearHistory()
+                SleuthIO.execute { Sleuth.db.clearHistory() }
                 true
             }
 
             findPreference<Preference>("clear_cache")?.setOnPreferenceClickListener {
-                try {
-                    context?.cacheDir?.listFiles()?.forEach { it.deleteRecursively() }
-                    WebStorage.getInstance().deleteAllData()
-                } catch (error: Throwable) {
-                    // cache is best effort
+                val context = context
+                SleuthIO.execute {
+                    try {
+                        context?.cacheDir?.listFiles()?.forEach { it.deleteRecursively() }
+                        WebStorage.getInstance().deleteAllData()
+                    } catch (error: Throwable) {
+                        // cache is best effort
+                    }
                 }
                 true
             }
 
             findPreference<Preference>("clear_all")?.setOnPreferenceClickListener {
-                val context = context ?: return@setOnPreferenceClickListener true
-                try {
-                    context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
-                    val evidenceRoot = File(context.filesDir, "evidence")
-                    evidenceRoot.listFiles()?.forEach { it.deleteRecursively() }
-                    WebStorage.getInstance().deleteAllData()
-                } catch (error: Throwable) {
-                    // best effort
+                val context = context
+                SleuthIO.execute {
+                    try {
+                        context?.cacheDir?.listFiles()?.forEach { it.deleteRecursively() }
+                        val evidenceRoot = File(context?.filesDir ?: File("/"), "evidence")
+                        evidenceRoot.listFiles()?.forEach { it.deleteRecursively() }
+                        WebStorage.getInstance().deleteAllData()
+                    } catch (error: Throwable) {
+                        // best effort
+                    }
+                    Sleuth.db.clearHistory()
+                    for (bookmark in Sleuth.db.bookmarks("")) {
+                        Sleuth.db.deleteBookmark(bookmark.id)
+                    }
+                    for (case in Sleuth.db.cases()) {
+                        Sleuth.db.deleteCase(case.id)
+                    }
+                    Sleuth.repository.disarm()
                 }
-                Sleuth.db.clearHistory()
-                for (bookmark in Sleuth.db.bookmarks("")) {
-                    Sleuth.db.deleteBookmark(bookmark.id)
-                }
-                for (case in Sleuth.db.cases()) {
-                    Sleuth.db.deleteCase(case.id)
-                }
-                Sleuth.repository.disarm()
                 true
             }
         }

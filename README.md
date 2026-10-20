@@ -62,6 +62,21 @@ silently rewritten into searches. See [Detective's rules](#detectives-rules).
 - **Export** a case as a self contained HTML report (images inlined as base64) or as JSON
 - Everything stays on the device: no account, no sync, no upload
 
+### It loads pages fast
+
+- **Engine warm up** — the browser engine is started while the app is still opening, so the first page
+  is asked for on a running engine
+- **Lite mode** — skips images, video, audio and fonts while keeping the documents, scripts and
+  styles that make a page work
+- **Nothing blocks the browser thread** — history, cases, evidence, thumbnails, image compression and
+  report building all run on one background thread
+- **Old loads are dropped** — a new navigation stops the download that is still running
+- **Text never travels whole** — page text is cut inside the page, not on the way to the app
+- **Background tabs sleep** — pages stop running when the app is not in front
+- **Only a tap opens a tab** — a script cannot spawn windows
+- **Switching to desktop mode no longer rebuilds every tab** — only the page in front is reloaded
+- **Release builds are shrunk and optimised** (R8 plus resource shrinking)
+
 ## Detective's rules
 
 Sleuth is a tool, not a companion.

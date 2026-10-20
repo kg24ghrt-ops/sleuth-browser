@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.sleuth.browser.R
 import com.sleuth.browser.Sleuth
+import com.sleuth.browser.SleuthIO
 import com.sleuth.browser.databinding.ActivityHistoryBinding
 import com.sleuth.browser.databinding.ItemHistoryBinding
 import java.text.SimpleDateFormat
@@ -61,13 +62,18 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun refresh() {
         val query = binding.searchField.text?.toString()?.trim().orEmpty()
-        val records = if (showingBookmarks) {
-            Sleuth.db.bookmarks(query).map { Record(it.id, it.url, it.title, it.createdAt, false) }
-        } else {
-            Sleuth.db.history(query).map { Record(it.id, it.url, it.title, it.visitedAt, true) }
+        val bookmarks = showingBookmarks
+        SleuthIO.submit({
+            if (bookmarks) {
+                Sleuth.db.bookmarks(query).map { Record(it.id, it.url, it.title, it.createdAt, false) }
+            } else {
+                Sleuth.db.history(query).map { Record(it.id, it.url, it.title, it.visitedAt, true) }
+            }
+        }) { records ->
+            if (isFinishing || isDestroyed) return@submit
+            adapter.submit(records)
+            binding.emptyText.visibility = if (records.isEmpty()) View.VISIBLE else View.GONE
         }
-        adapter.submit(records)
-        binding.emptyText.visibility = if (records.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private data class Record(
@@ -113,12 +119,15 @@ class HistoryActivity : AppCompatActivity() {
                 startActivity(intent)
             }
             view.root.setOnLongClickListener {
-                if (item.isHistory) {
-                    Sleuth.db.deleteHistory(item.id)
-                } else {
-                    Sleuth.db.deleteBookmark(item.id)
-                }
-                refresh()
+                // the delete runs in the background, the list is refreshed when it lands
+                SleuthIO.submit({
+                    if (item.isHistory) {
+                        Sleuth.db.deleteHistory(item.id)
+                    } else {
+                        Sleuth.db.deleteBookmark(item.id)
+                    }
+                    true
+                }) { refresh() }
                 true
             }
         }

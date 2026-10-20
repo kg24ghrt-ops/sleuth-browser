@@ -60,7 +60,7 @@ object WebViewFactory {
         webSettings.mediaPlaybackRequiresUserGesture = true
         webSettings.allowFileAccess = false
         webSettings.allowContentAccess = false
-        webSettings.javaScriptCanOpenWindowsAutomatically = true
+        webSettings.javaScriptCanOpenWindowsAutomatically = false
         webSettings.setSupportMultipleWindows(true)
         webSettings.cacheMode = WebSettings.LOAD_DEFAULT
         webSettings.userAgentString = if (settings.desktopMode) DESKTOP_UA else MOBILE_UA
@@ -70,8 +70,9 @@ object WebViewFactory {
             WebSettings.MIXED_CONTENT_NEVER_ALLOW
         }
         webSettings.setGeolocationEnabled(settings.geolocation)
+        webSettings.blockNetworkImage = settings.liteMode
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            webSettings.safeBrowsingEnabled = false
+            webSettings.safeBrowsingEnabled = settings.safeBrowsing
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             webSettings.setAlgorithmicDarkeningAllowed(settings.darkPages)
@@ -116,7 +117,9 @@ object WebViewFactory {
                 request: WebResourceRequest
             ): WebResourceResponse? {
                 val url = request.url?.toString() ?: return null
-                if (settings.blockTrackers && TrackerBlocker.shouldBlock(url)) {
+                if (request.isForMainFrame) return null
+                val mode = ResourcePolicy.modeFor(settings.liteMode)
+                if (ResourcePolicy.shouldBlock(mode, settings.blockTrackers, null, url)) {
                     return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
                 }
                 return null
@@ -139,6 +142,8 @@ object WebViewFactory {
                 isUserGesture: Boolean,
                 resultMsg: Message
             ): Boolean {
+                // only a real tap may open a tab, never a script
+                if (!isUserGesture) return false
                 val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
                 val popup = WebView(view.context)
                 WebViewFactory.configure(popup, settings, host)

@@ -11,6 +11,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.sleuth.browser.R
 import com.sleuth.browser.Sleuth
+import com.sleuth.browser.SleuthIO
 import com.sleuth.browser.data.CaseFile
 import com.sleuth.browser.databinding.ActivityCasesBinding
 import com.sleuth.browser.databinding.ItemCaseBinding
@@ -41,9 +42,14 @@ class CasesActivity : AppCompatActivity() {
     }
 
     private fun refresh() {
-        val cases = Sleuth.db.cases()
-        adapter.submit(cases)
-        binding.emptyText.visibility = if (cases.isEmpty()) View.VISIBLE else View.GONE
+        SleuthIO.submit({
+            // the counts are gathered with the list so the screen never waits on sql
+            Sleuth.db.cases().map { CaseRow(it, Sleuth.db.evidenceCount(it.id)) }
+        }) { rows ->
+            if (isFinishing || isDestroyed) return@submit
+            adapter.submit(rows)
+            binding.emptyText.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+        }
     }
 
     private fun createCase() {
@@ -54,11 +60,13 @@ class CasesActivity : AppCompatActivity() {
         }
     }
 
+    private data class CaseRow(val file: CaseFile, val evidenceCount: Int)
+
     private inner class CaseAdapter : RecyclerView.Adapter<CaseHolder>() {
 
-        private val items = ArrayList<CaseFile>()
+        private val items = ArrayList<CaseRow>()
 
-        fun submit(newItems: List<CaseFile>) {
+        fun submit(newItems: List<CaseRow>) {
             items.clear()
             items.addAll(newItems)
             notifyDataSetChanged()
@@ -78,12 +86,12 @@ class CasesActivity : AppCompatActivity() {
 
     private inner class CaseHolder(private val view: ItemCaseBinding) : RecyclerView.ViewHolder(view.root) {
 
-        fun bind(item: CaseFile) {
+        fun bind(row: CaseRow) {
+            val item = row.file
             view.caseCode.text = item.code
             view.caseTitle.text = item.title.ifBlank { getString(R.string.action_new_case) }
             val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(item.createdAt))
-            val count = Sleuth.db.evidenceCount(item.id)
-            view.caseMeta.text = "$stamp  ·  $count items"
+            view.caseMeta.text = "$stamp  ·  ${row.evidenceCount} items"
             view.caseArmed.visibility = if (item.stakeout) View.VISIBLE else View.GONE
             view.root.setOnClickListener {
                 startActivity(CaseDetailActivity.intent(this@CasesActivity, item.id))

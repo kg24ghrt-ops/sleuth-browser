@@ -10,6 +10,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.sleuth.browser.R
 import com.sleuth.browser.Sleuth
+import com.sleuth.browser.SleuthIO
 import com.sleuth.browser.browser.MediaSaver
 import com.sleuth.browser.data.CaseFile
 import com.sleuth.browser.data.EvidenceType
@@ -165,27 +166,31 @@ class EvidenceLabActivity : AppCompatActivity(), AnnotationView.Listener {
 
     private fun fileInto(case: CaseFile) {
         val bitmap = binding.annotationView.export() ?: return
-        val file = Sleuth.repository.saveImage(case.id, bitmap, "capture")
-        Sleuth.repository.addEvidence(
-            case.id,
-            EvidenceType.SCREENSHOT,
-            pageTitle.ifBlank { case.code },
-            pageUrl,
-            "Captured on device",
-            file.absolutePath
-        )
+        val title = pageTitle.ifBlank { case.code }
+        val url = pageUrl
         Toast.makeText(this, R.string.status_captured, Toast.LENGTH_SHORT).show()
         finish()
+        // the image is compressed and filed off the browser thread
+        SleuthIO.execute {
+            val file = Sleuth.repository.saveImage(case.id, bitmap, "capture")
+            Sleuth.repository.addEvidence(
+                case.id,
+                EvidenceType.SCREENSHOT,
+                title,
+                url,
+                "Captured on device",
+                file.absolutePath
+            )
+        }
     }
 
     private fun saveToGallery() {
         val bitmap = binding.annotationView.export() ?: return
         val name = "sleuth-${System.currentTimeMillis()}.png"
-        val uri = MediaSaver.saveToGallery(this, bitmap, name)
-        if (uri != null) {
-            Toast.makeText(this, R.string.status_saved, Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, R.string.error_capture, Toast.LENGTH_SHORT).show()
+        val context = applicationContext
+        SleuthIO.submit({ MediaSaver.saveToGallery(context, bitmap, name) }) { uri ->
+            val message = if (uri != null) R.string.status_saved else R.string.error_capture
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -193,7 +198,10 @@ class EvidenceLabActivity : AppCompatActivity(), AnnotationView.Listener {
         val bitmap = binding.annotationView.export() ?: return
         val name = "sleuth-${UUID.randomUUID()}.png"
         val target = File(cacheDir, name)
-        if (!MediaSaver.writeBitmap(target, bitmap)) return
-        startActivity(MediaSaver.shareFile(this, target, "image/png"))
+        val context = applicationContext
+        SleuthIO.submit({ MediaSaver.writeBitmap(target, bitmap) }) { written ->
+            if (!written) return@submit
+            startActivity(MediaSaver.shareFile(context, target, "image/png"))
+        }
     }
 }
