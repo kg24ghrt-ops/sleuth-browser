@@ -63,6 +63,11 @@ class BrowserSettings(context: Context) {
         get() = prefs.getBoolean(KEY_SAFE_BROWSING, true)
         set(value) = prefs.edit().putBoolean(KEY_SAFE_BROWSING, value).apply()
 
+    /** Pages may not lock the browser down: no copy blocks, no hidden content. */
+    var overrideProtections: Boolean
+        get() = prefs.getBoolean(KEY_OVERRIDE_PROTECTIONS, true)
+        set(value) = prefs.edit().putBoolean(KEY_OVERRIDE_PROTECTIONS, value).apply()
+
     var fontScale: Int
         get() = prefs.getInt(KEY_FONT_SCALE, 100)
         set(value) = prefs.edit().putInt(KEY_FONT_SCALE, value).apply()
@@ -111,6 +116,7 @@ class BrowserSettings(context: Context) {
         const val KEY_PREWARM = "prewarm"
         const val KEY_PAUSE_BACKGROUND = "pause_background"
         const val KEY_SAFE_BROWSING = "safe_browsing"
+        const val KEY_OVERRIDE_PROTECTIONS = "override_protections"
         const val KEY_FONT_SCALE = "font_scale"
         const val KEY_INCOGNITO = "incognito"
         const val KEY_ARMED_CASE = "armed_case"

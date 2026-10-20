@@ -47,8 +47,24 @@ silently rewritten into searches. See [Detective's rules](#detectives-rules).
 - File chooser support, popup windows, `mailto:`/`tel:` handed to the system
 - Dark pages, text zoom, tracker blocking, mixed content control
 
-### It takes evidence seriously
-- **Viewport capture** with `PixelCopy` (hardware accurate, API 26+) and a software renderer fallback
+### Pages cannot lock the browser down
+
+Copy blocks, selection blocks, hidden print stylesheets — the browser does not accept them.
+
+- The unlock script is injected **before the page runs**, so a site never gets the chance to put
+  the lock on: `copy`, `cut`, `paste`, `contextmenu`, `selectstart` and `select` events are stopped
+  in the capture phase, inline `oncopy`/`oncut`/`oncontextmenu` handlers are removed as they appear,
+  and `user-select: none` is overruled with `!important`.
+- **Before every capture the page is put back into a readable state** and given a frame to repaint,
+  so a capture is never taken of a page that just hid itself.
+- **A flat picture is treated as a failure.** If the capture comes back as one single colour, the
+  page is rendered again by hand and only a picture with real content is filed as evidence.
+- Every trick a page uses is **detected and filed**: when a case is armed, "this page blocked
+  copying" is written into the case as evidence, and a small shield appears next to the address bar.
+- There is **no bridge into the page** — the browser never exposes an object to the site, so a
+  hostile page cannot call back into the app or fill the case file with noise.
+
+### It takes evidence seriously- **Viewport capture** with `PixelCopy` (hardware accurate, API 26+) and a software renderer fallback
 - **Full page capture** that stitches the whole document together while you watch
 - **Evidence lab**: pen, marker, box, circle, arrow, text labels and true pixel redaction
 - Undo, clear, four ink colours, and export to gallery, to a case file, or straight to another app

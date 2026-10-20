@@ -251,6 +251,7 @@ class CaseDetailActivity : AppCompatActivity() {
                     EvidenceType.SCREENSHOT -> R.drawable.ic_camera
                     EvidenceType.PAGE -> R.drawable.ic_document
                     EvidenceType.EXCERPT -> R.drawable.ic_text
+                    EvidenceType.PROTECTION -> R.drawable.ic_shield
                     else -> R.drawable.ic_note
                 }
             )

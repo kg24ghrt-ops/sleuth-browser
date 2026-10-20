@@ -65,4 +65,25 @@ object ScreenshotCapturer {
             callback(null)
         }
     }
+
+    /** True when the picture is one flat colour, which means the page hid itself. */
+    fun looksBlank(bitmap: Bitmap): Boolean {
+        return try {
+            val samples = ArrayList<Int>(32)
+            val stepX = (bitmap.width / 6).coerceAtLeast(1)
+            val stepY = (bitmap.height / 4).coerceAtLeast(1)
+            var y = 0
+            while (y < bitmap.height) {
+                var x = 0
+                while (x < bitmap.width) {
+                    samples.add(bitmap.getPixel(x, y))
+                    x += stepX
+                }
+                y += stepY
+            }
+            CaptureQuality.isUniform(samples)
+        } catch (error: Throwable) {
+            false
+        }
+    }
 }

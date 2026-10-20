@@ -59,6 +59,11 @@
             app:key="save_to_gallery"
             app:summary="@string/pref_save_shots_summary"
             app:title="@string/pref_save_shots" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="override_protections"
+            app:summary="@string/pref_override_protections_summary"
+            app:title="@string/pref_override_protections" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/pref_speed">

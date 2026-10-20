@@ -15,6 +15,8 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 
 interface BrowserHost {
     fun onPageStarted(url: String, title: String)
@@ -46,6 +48,8 @@ object WebViewFactory {
         webView.setBackgroundColor(0xFF0D1117.toInt())
         webView.isVerticalScrollBarEnabled = true
         webView.isHorizontalScrollBarEnabled = false
+
+        installUnlock(webView, settings)
 
         val webSettings = webView.settings
         webSettings.javaScriptEnabled = settings.javascript
@@ -84,6 +88,10 @@ object WebViewFactory {
         webView.webViewClient = object : WebViewClient() {
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                if (settings.overrideProtections) {
+                    // a second line of defence for engines without document start scripts
+                    view.evaluateJavascript(UnlockScript.UNLOCK, null)
+                }
                 host.onPageStarted(url, view.title ?: "")
             }
 
@@ -184,6 +192,21 @@ object WebViewFactory {
             ) {
                 if (settings.geolocation) callback.invoke(origin, true, false) else callback.invoke(origin, false, false)
             }
+        }
+    }
+
+    /**
+     * Injects the unlock script before the page runs its own code, so a site
+     * never gets the chance to block copying in the first place.
+     */
+    private fun installUnlock(webView: WebView, settings: BrowserSettings) {
+        if (!settings.overrideProtections) return
+        try {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                WebViewCompat.addDocumentStartJavaScript(webView, UnlockScript.UNLOCK, setOf("*"))
+            }
+        } catch (error: Throwable) {
+            // older engines simply fall back to the injection on page start
         }
     }
 }

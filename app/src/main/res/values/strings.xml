@@ -145,6 +145,9 @@
     <string name="pref_pause_summary">Stop running pages when the app is not in front</string>
     <string name="pref_safe_browsing">Safe browsing</string>
     <string name="pref_safe_browsing_summary">Check downloads against the Google list</string>
+    <string name="pref_override_protections">Override page protections</string>
+    <string name="pref_override_protections_summary">Pages cannot block copying, selection or your captures</string>
+    <string name="status_page_protected">This page tried to block the browser</string>
     <string name="pref_clear_history">Clear history</string>
     <string name="pref_clear_cache">Clear cache</string>
     <string name="pref_clear_all">Wipe every record</string>

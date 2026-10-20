@@ -32,6 +32,15 @@
             android:contentDescription="@string/content_description_app_icon"
             android:src="@drawable/ic_lock" />
 
+        <ImageView
+            android:id="@+id/protectionIcon"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="4dp"
+            android:contentDescription="@string/status_page_protected"
+            android:src="@drawable/ic_shield"
+            android:visibility="gone" />
+
         <EditText
             android:id="@+id/urlBar"
             android:layout_width="0dp"

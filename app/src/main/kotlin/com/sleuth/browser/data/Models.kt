@@ -50,4 +50,5 @@ object EvidenceType {
     const val PAGE = "PAGE"
     const val NOTE = "NOTE"
     const val EXCERPT = "EXCERPT"
+    const val PROTECTION = "PROTECTION"
 }

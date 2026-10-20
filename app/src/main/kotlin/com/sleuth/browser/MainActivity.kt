@@ -36,10 +36,12 @@ import com.sleuth.browser.browser.BrowserState
 import com.sleuth.browser.browser.BrowserTab
 import com.sleuth.browser.browser.JsTools
 import com.sleuth.browser.browser.MediaSaver
+import com.sleuth.browser.browser.ProtectionProbe
 import com.sleuth.browser.browser.ScreenshotCapturer
 import com.sleuth.browser.browser.SearchEngines
 import com.sleuth.browser.browser.SilentGuard
 import com.sleuth.browser.browser.TabManager
+import com.sleuth.browser.browser.UnlockScript
 import com.sleuth.browser.browser.UrlNormalizer
 import com.sleuth.browser.browser.WebViewFactory
 import com.sleuth.browser.data.CaseFile
@@ -63,6 +65,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     private var lastHistoryUrl: String = ""
     private var lastHistoryAt: Long = 0L
     private var extractionToken: Int = 0
+    private var lastProbedUrl: String = ""
+    private var protectionCodes: List<String> = emptyList()
     private var lastDesktopMode: Boolean = false
     private var armedCaseCache: CaseFile? = null
     private var tabSheet: BottomSheetDialog? = null
@@ -478,9 +482,29 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     private fun captureViewport() {
         val container = binding.webContainer
         if (container.width <= 0 || container.height <= 0) return
+        val webView = tabManager.current()?.webView
+        if (webView != null && Sleuth.settings.overrideProtections) {
+            // put the page back the way it should be before it is photographed
+            webView.evaluateJavascript(UnlockScript.REASSERT, null)
+            handler.postDelayed({ shoot(container) }, 140)
+        } else {
+            shoot(container)
+        }
+    }
+
+    private fun shoot(container: View) {
         ScreenshotCapturer.capture(this, container) { bitmap ->
             if (bitmap == null) {
                 Toast.makeText(this, R.string.error_capture, Toast.LENGTH_SHORT).show()
+                return@capture
+            }
+            if (ScreenshotCapturer.looksBlank(bitmap)) {
+                // the page may have hidden itself, so draw it again by hand
+                val retry = Bitmap.createBitmap(container.width, container.height, Bitmap.Config.ARGB_8888)
+                ScreenshotCapturer.captureByDrawing(container, retry) { drawn ->
+                    val usable = if (drawn != null && !ScreenshotCapturer.looksBlank(drawn)) drawn else bitmap
+                    openEvidenceLab(usable)
+                }
                 return@capture
             }
             openEvidenceLab(bitmap)
@@ -491,6 +515,9 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     private fun captureFullPage() {
         val webView = tabManager.current()?.webView ?: return
         Toast.makeText(this, R.string.status_capturing, Toast.LENGTH_SHORT).show()
+        if (Sleuth.settings.overrideProtections) {
+            webView.evaluateJavascript(UnlockScript.REASSERT, null)
+        }
         webView.evaluateJavascript(
             "(function(){var d=document.documentElement;return d.scrollHeight+'|'+d.clientWidth;})();"
         ) { raw ->
@@ -578,6 +605,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
     override fun onPageStarted(url: String, title: String) {
         binding.errorText.visibility = View.GONE
+        protectionCodes = emptyList()
+        updateProtectionIndicator()
         if (!binding.urlBar.hasFocus() && binding.urlBar.text?.toString() != url) {
             binding.urlBar.setText(url)
         }
@@ -606,7 +635,52 @@ class MainActivity : AppCompatActivity(), BrowserHost {
             }
         }
         recordVisitForCase(url, title)
+        runProtectionProbe(url, title)
         updateChrome()
+    }
+
+    /**
+     * Asks the page what it is doing to protect itself. The answer is kept
+     * quiet and, when a case is armed, filed as evidence.
+     */
+    private fun runProtectionProbe(url: String, title: String) {
+        if (!Sleuth.settings.overrideProtections) return
+        if (url == lastProbedUrl) return
+        lastProbedUrl = url
+        val webView = tabManager.current()?.webView ?: return
+        webView.evaluateJavascript(UnlockScript.PROBE) { raw ->
+            val codes = ProtectionProbe.codes(JsTools.decodeString(raw))
+            if (codes.isEmpty()) {
+                protectionCodes = emptyList()
+                updateProtectionIndicator()
+                return@evaluateJavascript
+            }
+            protectionCodes = codes
+            updateProtectionIndicator()
+            val case = armedCaseCache ?: return@evaluateJavascript
+            val note = ProtectionProbe.describe(codes)
+            val name = title.ifBlank { url }
+            SleuthIO.execute {
+                Sleuth.repository.addEvidence(
+                    case.id,
+                    EvidenceType.PROTECTION,
+                    name,
+                    url,
+                    note,
+                    ""
+                )
+            }
+        }
+    }
+
+    private fun updateProtectionIndicator() {
+        val codes = protectionCodes
+        if (codes.isEmpty()) {
+            binding.protectionIcon.visibility = View.GONE
+        } else {
+            binding.protectionIcon.visibility = View.VISIBLE
+            binding.protectionIcon.contentDescription = ProtectionProbe.summary(codes)
+        }
     }
 
     private fun recordVisitForCase(url: String, title: String) {
