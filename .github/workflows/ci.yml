@@ -56,14 +56,14 @@ jobs:
         run: ./gradlew --no-daemon --stacktrace assembleRelease
 
       - name: Upload the debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sleuth-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
       - name: Upload the release APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sleuth-release
           path: app/build/outputs/apk/release/app-release.apk
@@ -71,7 +71,7 @@ jobs:
 
       - name: Upload the lint report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lint-report
           path: app/build/reports/lint-results-debug.html
