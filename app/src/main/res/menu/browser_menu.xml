@@ -1,78 +1,79 @@
 <?xml version="1.0" encoding="utf-8"?>
-<menu xmlns:android="http://schemas.android.com/apk/res/android">
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
         android:id="@+id/action_new_tab"
         android:icon="@drawable/ic_add"
         android:title="@string/menu_new_tab"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_tab_switcher"
         android:icon="@drawable/ic_tabs"
         android:title="@string/menu_tab_switcher"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_capture_viewport"
         android:icon="@drawable/ic_camera"
         android:title="@string/menu_capture_viewport"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_full_page"
         android:icon="@drawable/ic_document"
         android:title="@string/menu_full_page"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_find"
         android:icon="@drawable/ic_search"
         android:title="@string/menu_find"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_cases"
         android:icon="@drawable/ic_folder"
         android:title="@string/menu_cases"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_history"
         android:icon="@drawable/ic_history"
         android:title="@string/menu_history"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_bookmarks"
         android:icon="@drawable/ic_bookmark"
         android:title="@string/menu_bookmarks"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_share"
         android:icon="@drawable/ic_share"
         android:title="@string/menu_share"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_incognito"
         android:icon="@drawable/ic_incognito"
         android:title="@string/menu_incognito"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_desktop_site"
         android:icon="@drawable/ic_desktop"
         android:title="@string/menu_desktop_site"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_block_site"
         android:icon="@drawable/ic_block"
         android:title="@string/menu_block_site"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_settings"
         android:icon="@drawable/ic_settings"
         android:title="@string/menu_settings"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_rules"
         android:icon="@drawable/ic_rules"
         android:title="@string/menu_rules"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_about"
         android:icon="@drawable/ic_info"
         android:title="@string/menu_about"
-        android:showAsAction="never" />
+        app:showAsAction="never" />
 </menu>
