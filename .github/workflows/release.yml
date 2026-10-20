@@ -43,7 +43,7 @@ jobs:
           "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Build the release APK
         run: ./gradlew --no-daemon --stacktrace assembleRelease
