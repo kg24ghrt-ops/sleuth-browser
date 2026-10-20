@@ -75,7 +75,7 @@ class CaseDetailActivity : AppCompatActivity() {
         binding.caseMeta.text = "$stamp  ·  ${Sleuth.db.evidenceCount(file.id)} items"
         binding.caseNotes.text = file.notes
         binding.caseNotes.visibility = if (file.notes.isBlank()) View.GONE else View.VISIBLE
-        binding.btnStakeout.text = if (file.stakeout) R.string.action_disarm else R.string.action_stakeout
+        binding.btnStakeout.setText(if (file.stakeout) R.string.action_disarm else R.string.action_stakeout)
 
         val items = Sleuth.db.evidenceForCase(caseId)
         adapter.submit(items)

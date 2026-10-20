@@ -22,7 +22,7 @@ interface BrowserHost {
     fun onProgressChanged(progress: Int)
     fun onTitleChanged(title: String)
     fun onNewTabRequest(url: String)
-    fun onFileChooser(params: WebChromeClient.FileChooserParams): Boolean
+    fun onFileChooser(callback: ValueCallback<Array<android.net.Uri>>, params: WebChromeClient.FileChooserParams): Boolean
     fun onJsDialog(message: String, respond: (Boolean) -> Unit)
     fun onPageError(url: String, description: String)
     fun onExternalUrl(url: String): Boolean
@@ -117,7 +117,7 @@ object WebViewFactory {
             ): WebResourceResponse? {
                 val url = request.url?.toString() ?: return null
                 if (settings.blockTrackers && TrackerBlocker.shouldBlock(url)) {
-                    return WebResourceResponse("text/plain", "utf-8", ByteArray(0))
+                    return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
                 }
                 return null
             }
@@ -160,16 +160,16 @@ object WebViewFactory {
                 filePathCallback: ValueCallback<Array<android.net.Uri>>,
                 fileChooserParams: FileChooserParams
             ): Boolean {
-                return host.onFileChooser(fileChooserParams)
+                return host.onFileChooser(filePathCallback, fileChooserParams)
             }
 
             override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean {
-                host.onJsDialog(message) { result.confirm(it) }
+                host.onJsDialog(message) { ok -> if (ok) result.confirm() else result.cancel() }
                 return true
             }
 
             override fun onJsConfirm(view: WebView, url: String, message: String, result: JsResult): Boolean {
-                host.onJsDialog(message) { result.confirm(it) }
+                host.onJsDialog(message) { ok -> if (ok) result.confirm() else result.cancel() }
                 return true
             }
 

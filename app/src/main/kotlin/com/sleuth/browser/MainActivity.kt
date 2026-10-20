@@ -602,9 +602,12 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         openInNewTab(url)
     }
 
-    override fun onFileChooser(params: WebChromeClient.FileChooserParams): Boolean {
+    override fun onFileChooser(
+        callback: ValueCallback<Array<Uri>>,
+        params: WebChromeClient.FileChooserParams
+    ): Boolean {
         fileChooserCallback?.onReceiveValue(null)
-        fileChooserCallback = params.createCallback()
+        fileChooserCallback = callback
         return try {
             val intent = params.createIntent()
             fileChooserLauncher.launch(intent)

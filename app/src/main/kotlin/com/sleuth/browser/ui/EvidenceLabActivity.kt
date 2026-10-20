@@ -148,15 +148,16 @@ class EvidenceLabActivity : AppCompatActivity(), AnnotationView.Listener {
         ids.add(0L)
 
         AlertDialog.Builder(this)
-            .setTitle(R.string.action_save_case)
+            .setTitle(R.string.tool_save_case)
             .setItems(labels.toTypedArray()) { _, which ->
                 var caseId = ids[which]
                 if (caseId == 0L) {
                     caseId = Sleuth.db.createCase(getString(R.string.action_new_case))
                 }
-                if (caseId > 0) {
-                    Sleuth.repository.arm(caseId)
-                    fileInto(Sleuth.db.caseById(caseId) ?: return)
+                val case = Sleuth.db.caseById(caseId)
+                if (case != null) {
+                    Sleuth.repository.arm(case.id)
+                    fileInto(case)
                 }
             }
             .show()
