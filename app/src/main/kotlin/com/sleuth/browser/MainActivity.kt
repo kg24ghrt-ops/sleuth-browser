@@ -147,8 +147,14 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     override fun onResume() {
         super.onResume()
         tabManager.current()?.webView?.onResume()
-        lastDesktopMode = Sleuth.settings.desktopMode
+        val desktopMode = Sleuth.settings.desktopMode
+        val modeChanged = desktopMode != lastDesktopMode
+        lastDesktopMode = desktopMode
         applyWebSettings()
+        if (modeChanged) {
+            // the user agent only counts after a reload, and only the page in front needs it
+            tabManager.current()?.webView?.reload()
+        }
         refreshArmedCase()
         updateChrome()
     }
@@ -405,6 +411,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         val tab = tabManager.at(index) ?: return
         binding.webContainer.removeAllViews()
         binding.webContainer.addView(tab.webView)
+        // a tab that was sleeping in the background has to wake up again
+        tab.webView.onResume()
         tabManager.select(index)
         updateChrome()
     }
