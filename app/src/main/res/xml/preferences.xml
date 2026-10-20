@@ -9,8 +9,8 @@
             app:title="@string/pref_dark_mode" />
         <SeekBarPreference
             app:defaultValue="100"
+            android:max="200"
             app:key="font_scale"
-            app:max="200"
             app:min="50"
             app:showSeekBarValue="true"
             app:title="@string/pref_font_size" />
