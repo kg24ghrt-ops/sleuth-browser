@@ -54,15 +54,21 @@ object ScreenshotCapturer {
     }
 
     fun captureByDrawing(view: View, bitmap: Bitmap, callback: (Bitmap?) -> Unit) {
+        val previous = view.layerType
         try {
-            val previous = view.layerType
             view.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
             val canvas = Canvas(bitmap)
             view.draw(canvas)
-            view.setLayerType(previous, null)
             callback(bitmap)
         } catch (error: Throwable) {
             callback(null)
+        } finally {
+            // the view must never be left drawing itself by hand
+            try {
+                view.setLayerType(previous, null)
+            } catch (error: Throwable) {
+                // nothing left to do
+            }
         }
     }
 

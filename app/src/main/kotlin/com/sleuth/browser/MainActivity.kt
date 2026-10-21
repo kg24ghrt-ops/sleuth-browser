@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.speech.RecognizerIntent
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
@@ -21,6 +22,7 @@ import android.webkit.WebView
 import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -36,13 +38,13 @@ import com.sleuth.browser.browser.BrowserState
 import com.sleuth.browser.browser.BrowserTab
 import com.sleuth.browser.browser.JsTools
 import com.sleuth.browser.browser.MediaSaver
+import com.sleuth.browser.browser.Omnibox
 import com.sleuth.browser.browser.ProtectionProbe
 import com.sleuth.browser.browser.ScreenshotCapturer
-import com.sleuth.browser.browser.SearchEngines
-import com.sleuth.browser.browser.SilentGuard
 import com.sleuth.browser.browser.TabManager
 import com.sleuth.browser.browser.UnlockScript
 import com.sleuth.browser.browser.UrlNormalizer
+import com.sleuth.browser.browser.VoiceInput
 import com.sleuth.browser.browser.WebViewFactory
 import com.sleuth.browser.data.CaseFile
 import com.sleuth.browser.data.EvidenceType
@@ -70,6 +72,11 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     private var lastDesktopMode: Boolean = false
     private var armedCaseCache: CaseFile? = null
     private var tabSheet: BottomSheetDialog? = null
+
+    private val voiceLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            handleVoiceResult(result)
+        }
 
     private val fileChooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -202,7 +209,6 @@ class MainActivity : AppCompatActivity(), BrowserHost {
                 (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER)
             if (go) {
                 navigate(binding.urlBar.text?.toString().orEmpty())
-                hideKeyboard()
                 true
             } else {
                 false
@@ -223,10 +229,61 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         }
         binding.btnHome.setOnClickListener { openInNewTab(Sleuth.settings.homeUrl) }
         binding.btnCapture.setOnClickListener { captureViewport() }
+        binding.btnVoice.setOnClickListener { startVoiceInput() }
         binding.btnCases.setOnClickListener { startActivity(Intent(this, CasesActivity::class.java)) }
         binding.caseChip.setOnClickListener { startActivity(Intent(this, CasesActivity::class.java)) }
         binding.btnTabs.setOnClickListener { showTabSheet() }
         binding.btnMore.setOnClickListener { showMenu(it) }
+    }
+
+    /**
+     * Lets the user say where to go. The words are handed to the same path a
+     * typed query takes: a place to go, or a thing to look up. Sleuth never
+     * answers and never says a word back.
+     */
+    private fun startVoiceInput() {
+        if (!Sleuth.settings.voiceInput) {
+            Toast.makeText(this, R.string.error_voice_off, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!RecognizerIntent.isRecognitionAvailable(this)) {
+            Toast.makeText(this, R.string.error_voice_unavailable, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
+            putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.voice_prompt))
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+        }
+        try {
+            voiceLauncher.launch(intent)
+        } catch (error: Throwable) {
+            Toast.makeText(this, R.string.error_voice_unavailable, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun handleVoiceResult(result: ActivityResult) {
+        if (result.resultCode != Activity.RESULT_OK) {
+            // nothing was said, or the microphone was closed
+            return
+        }
+        val spoken = try {
+            val results = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            VoiceInput.pick(results)
+        } catch (error: Throwable) {
+            ""
+        }
+        if (!VoiceInput.isUsable(spoken)) {
+            Toast.makeText(this, R.string.status_voice_empty, Toast.LENGTH_SHORT).show()
+            return
+        }
+        binding.urlBar.setText(spoken)
+        binding.urlBar.setSelection(spoken.length)
+        navigate(spoken)
     }
 
     private fun showMenu(anchor: View) {
@@ -486,10 +543,26 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         if (webView != null && Sleuth.settings.overrideProtections) {
             // put the page back the way it should be before it is photographed
             webView.evaluateJavascript(UnlockScript.REASSERT, null)
-            handler.postDelayed({ shoot(container) }, 140)
+            afterRepaint(container) { shoot(container) }
         } else {
             shoot(container)
         }
+    }
+
+    /**
+     * Runs [action] once the page has had the chance to paint again. The
+     * frame callback comes first, the timer is the safety net for a page that
+     * never gets a frame.
+     */
+    private fun afterRepaint(view: View, action: () -> Unit) {
+        var done = false
+        val fire = Runnable {
+            if (done) return@Runnable
+            done = true
+            action()
+        }
+        view.postOnAnimation(fire)
+        handler.postDelayed(fire, REPAINT_TIMEOUT)
     }
 
     private fun shoot(container: View) {
@@ -553,9 +626,9 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         }
         val startScroll = webView.scrollY
         webView.scrollTo(0, 0)
-        handler.postDelayed({
+        afterRepaint(webView) {
             stitchStep(webView, output, totalHeight, 0, viewHeight, scale, startScroll)
-        }, 250)
+        }
     }
 
     private fun stitchStep(
@@ -574,7 +647,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         }
         val targetScroll = (offset / scale).toInt()
         webView.scrollTo(0, targetScroll)
-        handler.postDelayed({
+        afterRepaint(webView) {
             ScreenshotCapturer.capture(this, binding.webContainer) { bitmap ->
                 if (bitmap == null) {
                     webView.scrollTo(0, startScroll)
@@ -585,7 +658,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
                 canvas.drawBitmap(bitmap, 0f, offset.toFloat(), null)
                 stitchStep(webView, output, totalHeight, offset + viewHeight, viewHeight, scale, startScroll)
             }
-        }, 180)
+        }
     }
 
     private fun openEvidenceLab(bitmap: Bitmap) {
@@ -647,18 +720,31 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         if (!Sleuth.settings.overrideProtections) return
         if (url == lastProbedUrl) return
         lastProbedUrl = url
+        probePage(url, title)
+        // a page may put its lock on a moment after it loaded, so it is asked again
+        handler.postDelayed({
+            if (tabManager.current()?.url == url) probePage(url, title)
+        }, PROBE_RECHECK)
+    }
+
+    private fun probePage(url: String, title: String) {
         val webView = tabManager.current()?.webView ?: return
         webView.evaluateJavascript(UnlockScript.PROBE) { raw ->
             val codes = ProtectionProbe.codes(JsTools.decodeString(raw))
             if (codes.isEmpty()) {
-                protectionCodes = emptyList()
-                updateProtectionIndicator()
+                if (protectionCodes.isNotEmpty()) {
+                    protectionCodes = emptyList()
+                    updateProtectionIndicator()
+                }
                 return@evaluateJavascript
             }
-            protectionCodes = codes
+            // every trick is filed once, however late it turns up
+            val fresh = codes.filter { it !in protectionCodes }
+            protectionCodes = protectionCodes + fresh
             updateProtectionIndicator()
+            if (fresh.isEmpty()) return@evaluateJavascript
             val case = armedCaseCache ?: return@evaluateJavascript
-            val note = ProtectionProbe.describe(codes)
+            val note = ProtectionProbe.describe(fresh)
             val name = title.ifBlank { url }
             SleuthIO.execute {
                 Sleuth.repository.addEvidence(
@@ -768,14 +854,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     // ------------------------------------------------------------------ utils
 
     private fun navigate(rawInput: String) {
-        val cleaned = SilentGuard.sanitize(rawInput)
-        if (cleaned.isBlank()) return
-        val url = UrlNormalizer.toUrl(cleaned)
-        val target = if (url != null) {
-            url
-        } else {
-            SearchEngines.searchUrl(Sleuth.settings.searchEngine, cleaned)
-        }
+        val target = Omnibox.targetFor(rawInput, Sleuth.settings.searchEngine) ?: return
+        hideKeyboard()
         val webView = tabManager.current()?.webView
         if (webView != null) {
             // drop whatever is still downloading, the new page matters now
@@ -793,6 +873,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         binding.btnForward.isEnabled = webView != null && webView.canGoForward()
         binding.btnBack.alpha = if (binding.btnBack.isEnabled) 1f else 0.35f
         binding.btnForward.alpha = if (binding.btnForward.isEnabled) 1f else 0.35f
+        binding.btnVoice.visibility =
+            if (Sleuth.settings.voiceInput) View.VISIBLE else View.GONE
 
         val armed = armedCaseCache
         binding.caseChip.text = if (armed != null) {
@@ -815,5 +897,11 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     companion object {
         private const val KEY_LAST_URL = "last_url"
         private const val MAX_PAGE_HEIGHT = 9000
+
+        /** How long a page may take to paint before the capture goes ahead. */
+        private const val REPAINT_TIMEOUT = 220L
+
+        /** How long to wait before asking the page again about its tricks. */
+        private const val PROBE_RECHECK = 900L
     }
 }

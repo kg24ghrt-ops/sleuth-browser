@@ -37,6 +37,47 @@ class UnlockScriptTest {
     }
 
     @Test
+    fun `the page cannot hear that the text was selected`() {
+        assertTrue(UnlockScript.UNLOCK.contains("'selectionchange'"))
+    }
+
+    @Test
+    fun `the capture surfaces are locked so they cannot come back`() {
+        assertTrue(UnlockScript.UNLOCK.contains("configurable: false"))
+        assertTrue(UnlockScript.UNLOCK.contains("writable: false"))
+    }
+
+    @Test
+    fun `the original tools are kept before the page can change them`() {
+        assertTrue(UnlockScript.UNLOCK.contains("Event.prototype.stopImmediatePropagation"))
+        assertTrue(UnlockScript.UNLOCK.contains("Object.defineProperty"))
+    }
+
+    @Test
+    fun `the page cannot see the browser leave the screen`() {
+        assertTrue(UnlockScript.UNLOCK.contains("visibilityState"))
+        assertTrue(UnlockScript.UNLOCK.contains("hasFocus"))
+    }
+
+    @Test
+    fun `the page cannot read the clipboard in any way`() {
+        assertTrue(UnlockScript.UNLOCK.contains("readText"))
+        assertTrue(UnlockScript.UNLOCK.contains("'read'"))
+    }
+
+    @Test
+    fun `a caught trick is written down for the probe`() {
+        assertTrue(UnlockScript.UNLOCK.contains("CODES"))
+        assertTrue(UnlockScript.PROBE.contains("CODES"))
+    }
+
+    @Test
+    fun `the unlock rule is the one the page cannot outrank`() {
+        assertTrue(UnlockScript.UNLOCK.contains("!important"))
+        assertTrue(UnlockScript.UNLOCK.contains("user-select:text"))
+    }
+
+    @Test
     fun `the script leaves no obvious mark behind`() {
         assertFalse(UnlockScript.UNLOCK.contains("window.__"))
         assertFalse(UnlockScript.UNLOCK.contains("data-sleuth"))

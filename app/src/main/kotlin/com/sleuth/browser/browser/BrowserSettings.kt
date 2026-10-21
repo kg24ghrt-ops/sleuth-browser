@@ -68,6 +68,11 @@ class BrowserSettings(context: Context) {
         get() = prefs.getBoolean(KEY_OVERRIDE_PROTECTIONS, true)
         set(value) = prefs.edit().putBoolean(KEY_OVERRIDE_PROTECTIONS, value).apply()
 
+    /** The user may say where to go instead of typing it. */
+    var voiceInput: Boolean
+        get() = prefs.getBoolean(KEY_VOICE_INPUT, true)
+        set(value) = prefs.edit().putBoolean(KEY_VOICE_INPUT, value).apply()
+
     var fontScale: Int
         get() = prefs.getInt(KEY_FONT_SCALE, 100)
         set(value) = prefs.edit().putInt(KEY_FONT_SCALE, value).apply()
@@ -117,6 +122,7 @@ class BrowserSettings(context: Context) {
         const val KEY_PAUSE_BACKGROUND = "pause_background"
         const val KEY_SAFE_BROWSING = "safe_browsing"
         const val KEY_OVERRIDE_PROTECTIONS = "override_protections"
+        const val KEY_VOICE_INPUT = "voice_input"
         const val KEY_FONT_SCALE = "font_scale"
         const val KEY_INCOGNITO = "incognito"
         const val KEY_ARMED_CASE = "armed_case"

@@ -9,12 +9,43 @@ import org.json.JSONObject
 object JsTools {
 
     /**
-     * Pulls the visible text of a page. The slice happens inside the page so
-     * a huge document never has to travel across the bridge.
+     * Pulls the visible text of a page. The walk stops as soon as there is
+     * enough, so a huge document never has to travel across the bridge and
+     * the page is not kept busy building a string nobody will read.
      */
     fun extractTextScript(): String =
-        "(function(){try{var t=document.body?document.body.innerText:'';" +
-            "return t.length>2000?t.substring(0,2000):t;}catch(e){return '';}})();"
+        """
+(function(){
+  try {
+    var limit = 2000;
+    var root = document.body || document.documentElement;
+    if (!root) return '';
+    var walker = document.createTreeWalker(root, 4, null, false);
+    var parts = [];
+    var total = 0;
+    var node;
+    while ((node = walker.nextNode())) {
+      var value = node.nodeValue;
+      if (!value) continue;
+      var text = value.replace(/\s+/g, ' ');
+      if (!text) continue;
+      if (total + text.length > limit) {
+        parts.push(text.substring(0, limit - total));
+        total = limit;
+        break;
+      }
+      parts.push(text);
+      total += text.length;
+      if (total >= limit) break;
+    }
+    if (!parts.length) {
+      var raw = (root.textContent || '').replace(/\s+/g, ' ');
+      return raw.length > limit ? raw.substring(0, limit) : raw;
+    }
+    return parts.join('').trim();
+  } catch (e) { return ''; }
+})();
+        """.trimIndent()
 
     fun findScript(query: String): String {
         val literal = JSONObject.quote(query)

@@ -64,6 +64,11 @@
             app:key="override_protections"
             app:summary="@string/pref_override_protections_summary"
             app:title="@string/pref_override_protections" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="voice_input"
+            app:summary="@string/pref_voice_input_summary"
+            app:title="@string/pref_voice_input" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/pref_speed">

@@ -18,6 +18,8 @@
     <string name="action_share">Share</string>
     <string name="action_find">Find on page</string>
     <string name="action_clear_cache">Clear cache</string>
+    <string name="action_voice">Speak a search</string>
+    <string name="voice_prompt">Say where to go</string>
 
     <!-- Menu -->
     <string name="menu_new_tab">New tab</string>
@@ -108,12 +110,15 @@
     <string name="status_page_added">Page added to case</string>
     <string name="status_blocked">Site blocked</string>
     <string name="status_copied">Link copied</string>
+    <string name="status_voice_empty">Nothing was heard</string>
     <string name="error_no_network">No connection</string>
     <string name="error_capture">Capture failed</string>
+    <string name="error_voice_unavailable">Voice input is not available on this device</string>
+    <string name="error_voice_off">Voice input is turned off</string>
 
     <!-- Rules -->
     <string name="rules_title">Detective\'s rules</string>
-    <string name="rules_body">Sleuth never talks. It does not ask questions, it does not offer help, it does not chat, and it never speaks aloud. Everything you type is treated as a place to go or a thing to look up — never as a conversation.\n\nThe browser records silently while a case is armed: pages visited, screenshots taken, notes written. Nothing is uploaded, nothing is shared, and the record stays on this device until you export it or wipe it.</string>
+    <string name="rules_body">Sleuth never talks. It does not ask questions, it does not offer help, it does not chat, and it never speaks aloud. You may speak a destination and it is treated exactly like a typed query — never as a conversation.\n\nThe browser records silently while a case is armed: pages visited, screenshots taken, notes written. Nothing is uploaded, nothing is shared, and the record stays on this device until you export it or wipe it.</string>
 
     <!-- Settings -->
     <string name="pref_appearance">Appearance</string>
@@ -147,6 +152,8 @@
     <string name="pref_safe_browsing_summary">Check downloads against the Google list</string>
     <string name="pref_override_protections">Override page protections</string>
     <string name="pref_override_protections_summary">Pages cannot block copying, selection or your captures</string>
+    <string name="pref_voice_input">Speak your queries</string>
+    <string name="pref_voice_input_summary">Say where to go instead of typing it. Sleuth never answers and never speaks back</string>
     <string name="status_page_protected">This page tried to block the browser</string>
     <string name="pref_clear_history">Clear history</string>
     <string name="pref_clear_cache">Clear cache</string>
