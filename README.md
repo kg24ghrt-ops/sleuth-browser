@@ -64,6 +64,27 @@ Copy blocks, selection blocks, hidden print stylesheets — the browser does not
 - There is **no bridge into the page** — the browser never exposes an object to the site, so a
   hostile page cannot call back into the app or fill the case file with noise.
 
+### The page cannot see what the browser is doing
+
+A page that logs `visibilitychange`, focus and clipboard events can tell when a browser took a
+picture or copied something. Sleuth takes those pages blind.
+
+- `visibilitychange`, `focus`, `blur`, `pagehide`, `pageshow`, `freeze`, `resume`, `beforeunload`
+  and `unload` are stopped in the capture phase, so the page never hears that the app came to the
+  front, went to the back, opened the evidence lab or took a picture.
+- The copy, cut, paste and selection events are stopped the same way, so a page cannot log what was
+  copied, and it cannot peek at the clipboard afterwards either — `navigator.clipboard.readText`
+  is refused.
+- The official surfaces for detecting or performing a screen capture are taken away:
+  `navigator.mediaDevices.getDisplayMedia` and `window.getScreenDetails` (the screen capture
+  detection API) are replaced with a refusal.
+- The injected script leaves nothing obvious behind: the marker is a javascript property on the
+  style element, not an id, a data attribute or a global name, and it is different on every run.
+
+The one trade off: a page that copies to the clipboard itself, with `execCommand('copy')`, loses
+that ability — the browser cannot tell the difference between the page copying and the user
+copying, and the user always wins.
+
 ### It takes evidence seriously- **Viewport capture** with `PixelCopy` (hardware accurate, API 26+) and a software renderer fallback
 - **Full page capture** that stitches the whole document together while you watch
 - **Evidence lab**: pen, marker, box, circle, arrow, text labels and true pixel redaction

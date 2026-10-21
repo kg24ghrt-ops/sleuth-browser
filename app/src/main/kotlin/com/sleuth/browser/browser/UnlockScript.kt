@@ -1,100 +1,48 @@
 package com.sleuth.browser.browser
 
+import java.util.UUID
+
 /**
- * The scripts that keep a hostile page from locking the browser down.
+ * The scripts that keep a hostile page from locking the browser down, and from
+ * watching what the browser is doing.
  *
  * Pages block copying with inline handlers, with capture phase listeners and
  * with `user-select: none`, and they hide themselves with print stylesheets.
- * The unlock script is injected before the page runs so the page never gets
+ * The unlock script is injected before the page runs, so the page never gets
  * the chance to put the lock on in the first place.
+ *
+ * The same script takes the page's eyes off the browser: visibility, focus,
+ * clipboard and unload events are stopped before the page can hear them, and
+ * the official screen capture surfaces are taken away, so a page cannot tell
+ * that a picture was taken or that something was copied.
+ *
+ * Nothing is left in the page that gives the game away: the marker lives on a
+ * javascript property of the injected style element instead of an id, a data
+ * attribute or a global name.
  */
 object UnlockScript {
 
-    /** Injected at document start, and again whenever a capture is taken. */
-    val UNLOCK: String = """
-(function(){
-  try {
-    var css = '*{-webkit-user-select:text !important;user-select:text !important;' +
-              '-webkit-touch-callout:default !important;}';
-    var style = document.getElementById('__sleuth_unlock');
-    if (!style) {
-      style = document.createElement('style');
-      style.id = '__sleuth_unlock';
-      style.type = 'text/css';
-      (document.head || document.documentElement).appendChild(style);
-    }
-    style.textContent = css;
-  } catch (e) {}
+    /** A name that does not give the game away. */
+    private val token: String = UUID.randomUUID().toString().replace("-", "").substring(0, 10)
 
-  try {
-    if (!window.__sleuthUnlocked) {
-      window.__sleuthUnlocked = true;
-      var stop = function (event) { event.stopImmediatePropagation(); };
-      var names = ['copy','cut','paste','contextmenu','selectstart','select'];
-      for (var i = 0; i < names.length; i++) {
-        document.addEventListener(names[i], stop, true);
-      }
-      var timer = null;
-      var scrub = function () {
-        if (timer) { clearTimeout(timer); timer = null; }
-        timer = setTimeout(function () {
-          timer = null;
-          try {
-            var nodes = document.querySelectorAll('[oncopy],[oncut],[oncontextmenu]');
-            for (var n = 0; n < nodes.length; n++) {
-              nodes[n].removeAttribute('oncopy');
-              nodes[n].removeAttribute('oncut');
-              nodes[n].removeAttribute('oncontextmenu');
-            }
-          } catch (e) {}
-        }, 250);
-      };
-      window.__sleuthScrub = scrub;
-      scrub();
-      if (window.MutationObserver && document.documentElement) {
-        var observer = new MutationObserver(function () { scrub(); });
-        observer.observe(document.documentElement, {
-          childList: true,
-          subtree: true,
-          attributes: true,
-          attributeFilter: ['oncopy','oncut','oncontextmenu']
-        });
-      }
-      document.addEventListener('DOMContentLoaded', function () {
-        try {
-          var style = document.getElementById('__sleuth_unlock');
-          if (style) { style.textContent = css; } else {
-            style = document.createElement('style');
-            style.id = '__sleuth_unlock';
-            style.type = 'text/css';
-            style.textContent = css;
-            (document.head || document.documentElement).appendChild(style);
-          }
-        } catch (e) {}
-        scrub();
-      });
-    }
-  } catch (e) {}
-})();
-""".trimIndent()
+    private const val MARK = "__sl__TOKEN__"
 
-    /** Puts the page back into a readable state right before a capture. */
-    val REASSERT: String = """
-(function(){
-  try {
-    if (window.__sleuthScrub) { window.__sleuthScrub(); }
-    var style = document.getElementById('__sleuth_unlock');
-    if (!style) {
-      style = document.createElement('style');
-      style.id = '__sleuth_unlock';
-      style.type = 'text/css';
-      (document.head || document.documentElement).appendChild(style);
-    }
-    style.textContent = '*{-webkit-user-select:text !important;user-select:text !important;' +
-                        '-webkit-touch-callout:default !important;}';
-  } catch (e) {}
-})();
-""".trimIndent()
+    /** Events the page must never hear about. */
+    private val hiddenEvents = listOf(
+        "copy", "cut", "paste", "contextmenu", "selectstart", "select",
+        "visibilitychange", "focus", "blur", "pagehide", "pageshow",
+        "freeze", "resume", "beforeunload", "unload"
+    )
+
+    /** The unlock script, injected before the page runs its own code. */
+    val UNLOCK: String = buildUnlock()
+
+    /**
+     * The same script, used again right before a capture. It is written so it
+     * can run as often as needed: it re-asserts the styles, scrubs the inline
+     * handlers and takes the capture surfaces away again.
+     */
+    val REASSERT: String = UNLOCK
 
     /**
      * Reports what the page is doing to protect itself. The answer is a short
@@ -138,4 +86,92 @@ object UnlockScript {
   return found.join(',');
 })();
 """.trimIndent()
+
+    private fun buildUnlock(): String {
+        val events = hiddenEvents.joinToString(",") { "'$it'" }
+        return """
+(function(){
+  try {
+    var MARK = '$MARK';
+    var find = function () {
+      var list = document.getElementsByTagName('style');
+      for (var i = 0; i < list.length; i++) { if (list[i][MARK]) return list[i]; }
+      return null;
+    };
+    var css = '*{-webkit-user-select:text !important;user-select:text !important;' +
+              '-webkit-touch-callout:default !important;}';
+    var style = find();
+    if (!style) {
+      style = document.createElement('style');
+      style.type = 'text/css';
+      (document.head || document.documentElement).appendChild(style);
+      style[MARK] = true;
+    }
+    style.textContent = css;
+
+    if (!style[MARK + 'i']) {
+      style[MARK + 'i'] = true;
+      var stop = function (event) { event.stopImmediatePropagation(); };
+      var names = [$events];
+      for (var n = 0; n < names.length; n++) {
+        window.addEventListener(names[n], stop, true);
+        document.addEventListener(names[n], stop, true);
+      }
+      var timer = null;
+      var scrub = function () {
+        if (timer) { clearTimeout(timer); timer = null; }
+        timer = setTimeout(function () {
+          timer = null;
+          try {
+            var nodes = document.querySelectorAll('[oncopy],[oncut],[oncontextmenu]');
+            for (var k = 0; k < nodes.length; k++) {
+              nodes[k].removeAttribute('oncopy');
+              nodes[k].removeAttribute('oncut');
+              nodes[k].removeAttribute('oncontextmenu');
+            }
+          } catch (e) {}
+        }, 250);
+      };
+      style[MARK + 's'] = scrub;
+      if (window.MutationObserver && document.documentElement) {
+        var observer = new MutationObserver(function () { scrub(); });
+        observer.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['oncopy','oncut','oncontextmenu']
+        });
+      }
+    }
+    if (style[MARK + 's']) { style[MARK + 's'](); }
+  } catch (e) {}
+
+  try {
+    // the official screen capture surfaces are taken away
+    if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+      navigator.mediaDevices.getDisplayMedia = function () {
+        return Promise.reject(new Error('Screen capture is not available'));
+      };
+    }
+  } catch (e) {}
+
+  try {
+    if (window.getScreenDetails) {
+      window.getScreenDetails = function () {
+        return Promise.reject(new Error('Screen capture is not available'));
+      };
+    }
+  } catch (e) {}
+
+  try {
+    // a page must not be able to read what the user just copied
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      navigator.clipboard.readText = function () {
+        return Promise.reject(new Error('Clipboard reading is not available'));
+      };
+    }
+  } catch (e) {}
+})();
+""".trimIndent().replace("__TOKEN__", token)
+    }
 }
