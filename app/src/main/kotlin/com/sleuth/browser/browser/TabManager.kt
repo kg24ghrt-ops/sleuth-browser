@@ -73,6 +73,16 @@ class TabManager(
         currentIndex = -1
     }
 
+    /**
+     * Puts the guard back over every tab, or takes it away, after the user
+     * changed what should be protected.
+     */
+    fun refreshGuards() {
+        for (tab in tabsSnapshot()) {
+            WebViewFactory.installUnlock(tab.webView, settings)
+        }
+    }
+
     private fun detach(tab: BrowserTab) {
         (tab.webView.parent as? ViewGroup)?.removeView(tab.webView)
     }

@@ -47,10 +47,24 @@ silently rewritten into searches. See [Detective's rules](#detectives-rules).
 - Deep links: `http`/`https` links open straight in Sleuth
 - File chooser support, popup windows, `mailto:`/`tel:` handed to the system
 - Dark pages, text zoom, tracker blocking, mixed content control
+- Lite mode in the menu: drop images, video, audio and fonts, and pages load faster
+- The address bar shows the short form of the address, the whole one when you tap it, with a clear
+  button and a one-tap way to speak a destination
 
 ### Pages cannot lock the browser down
 
 Copy blocks, selection blocks, hidden print stylesheets — the browser does not accept them.
+
+**And the user is in charge of it.** The guard can be switched off for everybody, or for one site
+only, so a page that misbehaves under it never gets in the way of ordinary browsing. When the guard
+stands down the shield next to the address bar shows it, and a tap puts the guard back.
+
+- **Off for everybody** — one switch in the menu, or in the settings. The page in front is loaded
+  again, so the change is not a promise but a fact.
+- **Off for one site** — the same switch, per site. The site is written into the guard itself, so it
+  is left alone the moment the guard lands on it, and every page under it is left alone too.
+- **Nothing changes behind your back** — the guard only ever stands over the page you are looking
+  at, and the switch in front of you always shows what is happening.
 
 - The unlock script is injected **before the page runs**, so a site never gets the chance to put
   the lock on: `copy`, `cut`, `paste`, `contextmenu`, `selectstart`, `select` and `selectionchange`

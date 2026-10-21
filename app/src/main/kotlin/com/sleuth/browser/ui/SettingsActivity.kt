@@ -46,6 +46,12 @@ class SettingsActivity : AppCompatActivity() {
                 preference.summary = version
             }
 
+            findPreference<Preference>("clear_bypassed_sites")?.setOnPreferenceClickListener {
+                // every site goes back under the guard
+                Sleuth.settings.bypassedSites = emptySet()
+                true
+            }
+
             findPreference<Preference>("clear_history")?.setOnPreferenceClickListener {
                 SleuthIO.execute { Sleuth.db.clearHistory() }
                 true

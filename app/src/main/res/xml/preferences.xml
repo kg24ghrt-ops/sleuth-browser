@@ -64,6 +64,10 @@
             app:key="override_protections"
             app:summary="@string/pref_override_protections_summary"
             app:title="@string/pref_override_protections" />
+        <Preference
+            app:key="clear_bypassed_sites"
+            app:summary="@string/pref_clear_bypassed_summary"
+            app:title="@string/pref_clear_bypassed" />
         <SwitchPreferenceCompat
             app:defaultValue="true"
             app:key="voice_input"

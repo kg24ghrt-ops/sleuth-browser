@@ -32,33 +32,45 @@
             android:contentDescription="@string/content_description_app_icon"
             android:src="@drawable/ic_lock" />
 
-        <ImageView
+        <ImageButton
             android:id="@+id/protectionIcon"
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:layout_marginStart="4dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="2dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/status_page_protected"
+            android:padding="5dp"
             android:src="@drawable/ic_shield"
             android:visibility="gone" />
 
         <EditText
             android:id="@+id/urlBar"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="38dp"
             android:layout_weight="1"
-            android:background="@null"
+            android:background="@drawable/bg_urlbar"
             android:ellipsize="end"
             android:hint="@string/hint_url"
             android:imeOptions="actionGo|flagNoExtractUi"
             android:inputType="textUri|textNoSuggestions"
             android:maxLines="1"
-            android:paddingStart="8dp"
+            android:paddingStart="12dp"
             android:paddingEnd="8dp"
             android:selectAllOnFocus="true"
             android:singleLine="true"
             android:textColor="@color/paper"
             android:textColorHint="@color/paper_dim"
             android:textSize="15sp" />
+
+        <ImageButton
+            android:id="@+id/btnClear"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_clear"
+            android:padding="6dp"
+            android:src="@drawable/ic_close"
+            android:visibility="gone" />
 
         <ImageButton
             android:id="@+id/btnVoice"
@@ -145,6 +157,11 @@
             android:visibility="gone" />
     </FrameLayout>
 
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/noir_outline" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -160,7 +177,8 @@
             android:layout_weight="1"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="@string/action_back"
-            android:src="@drawable/ic_back" />
+            android:src="@drawable/ic_back"
+            app:tooltipText="@string/action_back" />
 
         <ImageButton
             android:id="@+id/btnForward"
@@ -169,7 +187,8 @@
             android:layout_weight="1"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="@string/action_forward"
-            android:src="@drawable/ic_forward" />
+            android:src="@drawable/ic_forward"
+            app:tooltipText="@string/action_forward" />
 
         <ImageButton
             android:id="@+id/btnReload"
@@ -178,7 +197,8 @@
             android:layout_weight="1"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="@string/action_reload"
-            android:src="@drawable/ic_reload" />
+            android:src="@drawable/ic_reload"
+            app:tooltipText="@string/action_reload" />
 
         <ImageButton
             android:id="@+id/btnHome"
@@ -187,7 +207,8 @@
             android:layout_weight="1"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="@string/action_home"
-            android:src="@drawable/ic_home" />
+            android:src="@drawable/ic_home"
+            app:tooltipText="@string/action_home" />
 
         <ImageButton
             android:id="@+id/btnCapture"
@@ -196,7 +217,8 @@
             android:layout_weight="1"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="@string/action_capture"
-            android:src="@drawable/ic_camera" />
+            android:src="@drawable/ic_camera"
+            app:tooltipText="@string/action_capture" />
 
         <ImageButton
             android:id="@+id/btnCases"
@@ -205,7 +227,8 @@
             android:layout_weight="1"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="@string/action_cases"
-            android:src="@drawable/ic_folder" />
+            android:src="@drawable/ic_folder"
+            app:tooltipText="@string/action_cases" />
     </LinearLayout>
 
 </LinearLayout>

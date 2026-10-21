@@ -68,6 +68,37 @@ class BrowserSettings(context: Context) {
         get() = prefs.getBoolean(KEY_OVERRIDE_PROTECTIONS, true)
         set(value) = prefs.edit().putBoolean(KEY_OVERRIDE_PROTECTIONS, value).apply()
 
+    /**
+     * Sites that are allowed to protect themselves. A site in this list is
+     * left alone, so a page that misbehaves under the guard never gets in the
+     * way of ordinary browsing.
+     */
+    var bypassedSites: Set<String>
+        get() = prefs.getStringSet(KEY_BYPASSED_SITES, emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_BYPASSED_SITES, value).apply()
+
+    /** True when the guard should be standing over this address. */
+    fun isProtectionsOn(url: String): Boolean {
+        if (!overrideProtections) return false
+        return !isBypassed(url)
+    }
+
+    /** True when this address is on the list of sites that are left alone. */
+    fun isBypassed(url: String): Boolean = Bypass.coversUrl(url, bypassedSites)
+
+    /** Takes a site off the list, or puts it back on it. */
+    fun setBypassed(url: String, bypassed: Boolean) {
+        val host = UrlNormalizer.hostOf(url)
+        if (host.isEmpty()) return
+        val current = HashSet(bypassedSites)
+        if (bypassed) {
+            current.add(host)
+        } else {
+            current.remove(host)
+        }
+        bypassedSites = current
+    }
+
     /** The user may say where to go instead of typing it. */
     var voiceInput: Boolean
         get() = prefs.getBoolean(KEY_VOICE_INPUT, true)
@@ -122,6 +153,7 @@ class BrowserSettings(context: Context) {
         const val KEY_PAUSE_BACKGROUND = "pause_background"
         const val KEY_SAFE_BROWSING = "safe_browsing"
         const val KEY_OVERRIDE_PROTECTIONS = "override_protections"
+        const val KEY_BYPASSED_SITES = "bypassed_sites"
         const val KEY_VOICE_INPUT = "voice_input"
         const val KEY_FONT_SCALE = "font_scale"
         const val KEY_INCOGNITO = "incognito"

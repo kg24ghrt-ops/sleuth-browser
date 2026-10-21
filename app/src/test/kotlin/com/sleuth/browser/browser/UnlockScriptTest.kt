@@ -1,6 +1,5 @@
 package com.sleuth.browser.browser
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -87,7 +86,28 @@ class UnlockScriptTest {
 
     @Test
     fun `the reassert script is the same lock`() {
-        assertEquals(UnlockScript.UNLOCK, UnlockScript.REASSERT)
+        assertTrue(UnlockScript.UNLOCK.contains("user-select:text"))
+        assertTrue(UnlockScript.REASSERT.contains("user-select:text"))
+        assertTrue(UnlockScript.REASSERT.contains("getDisplayMedia"))
+    }
+
+    @Test
+    fun `a site that is left alone is not touched`() {
+        val script = UnlockScript.forBypassed(setOf("example.com"))
+        assertTrue(script.contains("'example.com'"))
+        assertTrue(script.contains("location.hostname"))
+        assertFalse(UnlockScript.UNLOCK.contains("'example.com'"))
+    }
+
+    @Test
+    fun `the light run only puts the lock back`() {
+        assertTrue(UnlockScript.REASSERT.contains("LIGHT = true"))
+        assertTrue(UnlockScript.UNLOCK.contains("LIGHT = false"))
+    }
+
+    @Test
+    fun `the first sweep waits for a quiet moment`() {
+        assertTrue(UnlockScript.UNLOCK.contains("requestIdleCallback"))
     }
 
     @Test

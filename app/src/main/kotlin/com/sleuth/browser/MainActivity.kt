@@ -10,6 +10,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.RecognizerIntent
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
@@ -43,6 +45,7 @@ import com.sleuth.browser.browser.ProtectionProbe
 import com.sleuth.browser.browser.ScreenshotCapturer
 import com.sleuth.browser.browser.TabManager
 import com.sleuth.browser.browser.UnlockScript
+import com.sleuth.browser.browser.UrlDisplay
 import com.sleuth.browser.browser.UrlNormalizer
 import com.sleuth.browser.browser.VoiceInput
 import com.sleuth.browser.browser.WebViewFactory
@@ -72,6 +75,10 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     private var lastDesktopMode: Boolean = false
     private var armedCaseCache: CaseFile? = null
     private var tabSheet: BottomSheetDialog? = null
+    private var currentUrl = ""
+
+    /** Set while the browser is taking the user somewhere, so the bar is left alone. */
+    private var barBusy = false
 
     private val voiceLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -162,6 +169,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         val modeChanged = desktopMode != lastDesktopMode
         lastDesktopMode = desktopMode
         applyWebSettings()
+        // a change in the settings may mean the guard has to stand down
+        tabManager.refreshGuards()
         if (modeChanged) {
             // the user agent only counts after a reload, and only the page in front needs it
             tabManager.current()?.webView?.reload()
@@ -182,15 +191,31 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     /** Pushes the current preferences into every open tab. */
     private fun applyWebSettings() {
         val settings = Sleuth.settings
+        val userAgent = if (settings.desktopMode) {
+            WebViewFactory.DESKTOP_UA
+        } else {
+            WebViewFactory.MOBILE_UA
+        }
         for (tab in tabManager.tabsSnapshot()) {
             val webSettings = tab.webView.settings
-            webSettings.blockNetworkImage = settings.liteMode
-            webSettings.textZoom = settings.fontScale
-            webSettings.javaScriptEnabled = settings.javascript
-            webSettings.userAgentString =
-                if (settings.desktopMode) WebViewFactory.DESKTOP_UA else WebViewFactory.MOBILE_UA
+            // a setting is only written when it really changed, so the page is
+            // never made to lay itself out again for nothing
+            if (webSettings.blockNetworkImage != settings.liteMode) {
+                webSettings.blockNetworkImage = settings.liteMode
+            }
+            if (webSettings.textZoom != settings.fontScale) {
+                webSettings.textZoom = settings.fontScale
+            }
+            if (webSettings.javaScriptEnabled != settings.javascript) {
+                webSettings.javaScriptEnabled = settings.javascript
+            }
+            if (webSettings.userAgentString != userAgent) {
+                webSettings.userAgentString = userAgent
+            }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                webSettings.safeBrowsingEnabled = settings.safeBrowsing
+                if (webSettings.safeBrowsingEnabled != settings.safeBrowsing) {
+                    webSettings.safeBrowsingEnabled = settings.safeBrowsing
+                }
             }
         }
     }
@@ -217,9 +242,28 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
         binding.urlBar.setOnFocusChangeListener { _, hasFocus ->
             if (hasFocus) {
+                showFullUrl()
                 binding.urlBar.selectAll()
+            } else if (!barBusy) {
+                showShortUrl()
             }
         }
+
+        binding.urlBar.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                updateClearButton()
+            }
+        })
+
+        binding.btnClear.setOnClickListener {
+            binding.urlBar.setText("")
+            binding.urlBar.requestFocus()
+        }
+
+        // the shield is the switch for the page that is in front
+        binding.protectionIcon.setOnClickListener { toggleSiteBypass() }
 
         binding.btnBack.setOnClickListener { tabManager.current()?.webView?.goBack() }
         binding.btnForward.setOnClickListener { tabManager.current()?.webView?.goForward() }
@@ -299,6 +343,15 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         popup.menuInflater.inflate(R.menu.browser_menu, popup.menu)
         popup.menu.findItem(R.id.action_incognito)?.isChecked = Sleuth.settings.incognito
         popup.menu.findItem(R.id.action_desktop_site)?.isChecked = Sleuth.settings.desktopMode
+        popup.menu.findItem(R.id.action_lite_mode)?.isChecked = Sleuth.settings.liteMode
+        popup.menu.findItem(R.id.action_protections)?.isChecked = Sleuth.settings.overrideProtections
+        val pageUrl = tabManager.current()?.url.orEmpty()
+        popup.menu.findItem(R.id.action_bypass_site)?.apply {
+            isChecked = Sleuth.settings.isBypassed(pageUrl)
+            // a single site only matters while the guard is standing at all
+            isVisible = Sleuth.settings.overrideProtections &&
+                UrlNormalizer.hostOf(pageUrl).isNotBlank()
+        }
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_new_tab -> {
@@ -362,6 +415,21 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
                 R.id.action_block_site -> {
                     blockCurrentSite()
+                    true
+                }
+
+                R.id.action_protections -> {
+                    toggleProtections()
+                    true
+                }
+
+                R.id.action_bypass_site -> {
+                    toggleSiteBypass()
+                    true
+                }
+
+                R.id.action_lite_mode -> {
+                    toggleLiteMode()
                     true
                 }
 
@@ -447,6 +515,70 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         if (host.isBlank()) return
         Sleuth.settings.blockSite(url)
         Toast.makeText(this, R.string.status_blocked, Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * Turns the guard off for everybody, or on again. The page in front is
+     * loaded again, because a page that has already put its lock on cannot be
+     * talked out of it.
+     */
+    private fun toggleProtections() {
+        val on = !Sleuth.settings.overrideProtections
+        Sleuth.settings.overrideProtections = on
+        applyProtectionChange(on, R.string.status_protections_on, R.string.status_protections_off)
+    }
+
+    /**
+     * Leaves this one site alone, or puts the guard back over it. Nothing
+     * else about the browser changes.
+     */
+    private fun toggleSiteBypass() {
+        val url = tabManager.current()?.url
+        if (url.isNullOrBlank() || UrlNormalizer.hostOf(url).isBlank()) {
+            Toast.makeText(this, R.string.status_no_site, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!Sleuth.settings.overrideProtections) {
+            // the guard is standing down for everybody, so the tap wakes it up
+            toggleProtections()
+            return
+        }
+        val bypassed = !Sleuth.settings.isBypassed(url)
+        Sleuth.settings.setBypassed(url, bypassed)
+        val message = if (bypassed) R.string.status_bypass_site else R.string.status_bypass_site_off
+        applyProtectionChange(!bypassed, R.string.status_protections_on, message)
+    }
+
+    /**
+     * Puts the guard back where it belongs and loads the page again, so the
+     * change is not a promise but a fact.
+     */
+    private fun applyProtectionChange(protectionsOn: Boolean, onMessage: Int, offMessage: Int) {
+        tabManager.refreshGuards()
+        val webView = tabManager.current()?.webView
+        if (webView != null) {
+            webView.reload()
+        }
+        updateChrome()
+        Toast.makeText(
+            this,
+            if (protectionsOn) onMessage else offMessage,
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    /** Lite mode drops images, video, audio and fonts, so pages load faster. */
+    private fun toggleLiteMode() {
+        val on = !Sleuth.settings.liteMode
+        Sleuth.settings.liteMode = on
+        applyWebSettings()
+        tabManager.current()?.webView?.reload()
+        updateChrome()
+        Toast.makeText(
+            this,
+            if (on) R.string.status_lite_on else R.string.status_lite_off,
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun toggleIncognito() {
@@ -548,14 +680,18 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         val container = binding.webContainer
         if (container.width <= 0 || container.height <= 0) return
         val webView = tabManager.current()?.webView
-        if (webView != null && Sleuth.settings.overrideProtections) {
+        if (webView != null && protectionsOn()) {
             // put the page back the way it should be before it is photographed
-            webView.evaluateJavascript(UnlockScript.REASSERT, null)
+            webView.evaluateJavascript(UnlockScript.forBypassed(Sleuth.settings.bypassedSites, light = true), null)
             afterRepaint(container) { shoot(container) }
         } else {
             shoot(container)
         }
     }
+
+    /** True when the guard is standing over the page that is in front. */
+    private fun protectionsOn(): Boolean =
+        Sleuth.settings.isProtectionsOn(tabManager.current()?.url.orEmpty())
 
     /**
      * Runs [action] once the page has had the chance to paint again. The
@@ -596,8 +732,11 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     private fun captureFullPage() {
         val webView = tabManager.current()?.webView ?: return
         Toast.makeText(this, R.string.status_capturing, Toast.LENGTH_SHORT).show()
-        if (Sleuth.settings.overrideProtections) {
-            webView.evaluateJavascript(UnlockScript.REASSERT, null)
+        if (protectionsOn()) {
+            webView.evaluateJavascript(
+                UnlockScript.forBypassed(Sleuth.settings.bypassedSites, light = true),
+                null
+            )
         }
         webView.evaluateJavascript(
             "(function(){var d=document.documentElement;return d.scrollHeight+'|'+d.clientWidth;})();"
@@ -687,10 +826,13 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     override fun onPageStarted(url: String, title: String) {
         binding.errorText.visibility = View.GONE
         protectionCodes = emptyList()
-        updateProtectionIndicator()
-        if (!binding.urlBar.hasFocus() && binding.urlBar.text?.toString() != url) {
-            binding.urlBar.setText(url)
+        currentUrl = url
+        barBusy = false
+        if (!binding.urlBar.hasFocus()) {
+            showShortUrl()
         }
+        binding.progressBar.visibility = View.VISIBLE
+        updateChrome()
     }
 
     override fun onPageFinished(url: String, title: String) {
@@ -698,8 +840,9 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         val tab = tabManager.current()
         tab?.url = url
         tab?.title = title
-        if (!binding.urlBar.hasFocus() && binding.urlBar.text?.toString() != url) {
-            binding.urlBar.setText(url)
+        currentUrl = url
+        if (!binding.urlBar.hasFocus()) {
+            showShortUrl()
         }
         binding.titleText.text = title.ifBlank { url }
         BrowserState.currentUrl = url
@@ -725,7 +868,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
      * quiet and, when a case is armed, filed as evidence.
      */
     private fun runProtectionProbe(url: String, title: String) {
-        if (!Sleuth.settings.overrideProtections) return
+        if (!Sleuth.settings.isProtectionsOn(url)) return
         if (url == lastProbedUrl) return
         lastProbedUrl = url
         probePage(url, title)
@@ -768,12 +911,26 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     }
 
     private fun updateProtectionIndicator() {
+        val url = tabManager.current()?.url.orEmpty()
         val codes = protectionCodes
-        if (codes.isEmpty()) {
-            binding.protectionIcon.visibility = View.GONE
-        } else {
-            binding.protectionIcon.visibility = View.VISIBLE
-            binding.protectionIcon.contentDescription = ProtectionProbe.summary(codes)
+        when {
+            !Sleuth.settings.isProtectionsOn(url) -> {
+                // the guard is standing down here, and it can be tapped to wake up
+                binding.protectionIcon.visibility = View.VISIBLE
+                binding.protectionIcon.setImageResource(R.drawable.ic_shield_off)
+                binding.protectionIcon.contentDescription =
+                    getString(R.string.status_protections_off)
+            }
+
+            codes.isNotEmpty() -> {
+                binding.protectionIcon.visibility = View.VISIBLE
+                binding.protectionIcon.setImageResource(R.drawable.ic_shield)
+                binding.protectionIcon.contentDescription = ProtectionProbe.summary(codes)
+            }
+
+            else -> {
+                binding.protectionIcon.visibility = View.GONE
+            }
         }
     }
 
@@ -803,6 +960,11 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
     override fun onProgressChanged(progress: Int) {
         binding.progressBar.progress = progress
+        if (progress >= 100) {
+            binding.progressBar.visibility = View.GONE
+        } else {
+            binding.progressBar.visibility = View.VISIBLE
+        }
     }
 
     override fun onTitleChanged(title: String) {
@@ -863,6 +1025,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
     private fun navigate(rawInput: String) {
         val target = Omnibox.targetFor(rawInput, Sleuth.settings.searchEngine) ?: return
+        barBusy = true
         hideKeyboard()
         val webView = tabManager.current()?.webView
         if (webView != null) {
@@ -875,6 +1038,31 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         }
     }
 
+    /** Puts the whole address in the bar, ready to be edited. */
+    private fun showFullUrl() {
+        val url = currentUrl
+        if (url.isBlank()) return
+        if (binding.urlBar.text?.toString() != url) {
+            binding.urlBar.setText(url)
+            binding.urlBar.setSelection(url.length)
+        }
+    }
+
+    /** Puts the short form in the bar, the way a browser shows it. */
+    private fun showShortUrl() {
+        val url = currentUrl
+        if (url.isBlank()) return
+        val short = UrlDisplay.short(url)
+        if (binding.urlBar.text?.toString() != short) {
+            binding.urlBar.setText(short)
+        }
+    }
+
+    private fun updateClearButton() {
+        val hasText = !binding.urlBar.text.isNullOrBlank()
+        binding.btnClear.visibility = if (hasText) View.VISIBLE else View.GONE
+    }
+
     private fun updateChrome() {
         val webView = tabManager.current()?.webView
         binding.btnBack.isEnabled = webView != null && webView.canGoBack()
@@ -883,6 +1071,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         binding.btnForward.alpha = if (binding.btnForward.isEnabled) 1f else 0.35f
         binding.btnVoice.visibility =
             if (Sleuth.settings.voiceInput) View.VISIBLE else View.GONE
+        updateClearButton()
+        updateProtectionIndicator()
 
         val armed = armedCaseCache
         binding.caseChip.text = if (armed != null) {

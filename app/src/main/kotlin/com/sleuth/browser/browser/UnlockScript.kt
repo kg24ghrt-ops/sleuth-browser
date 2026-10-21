@@ -52,14 +52,22 @@ object UnlockScript {
     )
 
     /** The unlock script, injected before the page runs its own code. */
-    val UNLOCK: String = buildUnlock()
+    val UNLOCK: String = buildScript(emptySet(), light = false)
 
     /**
      * The same script, used again right before a capture. It is written so it
      * can run as often as needed: it re-asserts the styles, scrubs the inline
      * handlers and takes the capture surfaces away again.
      */
-    val REASSERT: String = UNLOCK
+    val REASSERT: String = buildScript(emptySet(), light = true)
+
+    /**
+     * The script for a set of sites that are allowed to protect themselves.
+     * The sites are written into the script, so the guard stands down on its
+     * own the moment it lands on one of them.
+     */
+    fun forBypassed(bypassed: Set<String>, light: Boolean = false): String =
+        buildScript(bypassed, light)
 
     /**
      * Reports what the page is doing to protect itself. The answer is a short
@@ -68,14 +76,30 @@ object UnlockScript {
      */
     val PROBE: String = buildProbe()
 
-    private fun buildUnlock(): String {
+    private fun buildScript(bypassed: Set<String>, light: Boolean): String {
         val events = hiddenEvents.joinToString(",") { "'$it'" }
+        val hosts = bypassed.sorted().joinToString(",") { "'${it.replace("'", "")}'" }
         return """
 (function(){
   var MARK = '$marker';
   var CODES = MARK + '$CODES_SUFFIX';
   var OBSERVER = MARK + '$OBSERVER_SUFFIX';
   var STOP = MARK + '$STOP_SUFFIX';
+  var LIGHT = $light;
+  var BYPASS = [$hosts];
+
+  // A site the user left alone is not touched at all.
+  try {
+    var host = String(location.hostname || '').toLowerCase();
+    for (var b = 0; b < BYPASS.length; b++) {
+      var name = BYPASS[b];
+      if (!name) continue;
+      if (host === name ||
+          (host.length > name.length && host.slice(-(name.length + 1)) === '.' + name)) {
+        return;
+      }
+    }
+  } catch (e) {}
 
   // The page may try to take the tools away. The originals are kept here,
   // before the page gets a chance to change them.
@@ -246,12 +270,28 @@ object UnlockScript {
     }, 400);
   };
 
+  // Work that is not urgent waits for a quiet moment, so a page that is still
+  // loading is never slowed down by the guard.
+  var idle = function (work) {
+    try {
+      if (window.requestIdleCallback) {
+        window.requestIdleCallback(work, { timeout: 1500 });
+        return;
+      }
+    } catch (e) {}
+    setTimeout(work, 200);
+  };
+
   var scrub = function () {
     ensure();
     needFull = true;
     needFullStyles = true;
-    scheduleHandlers();
-    scheduleStyles();
+    if (LIGHT) {
+      scheduleHandlers();
+      scheduleStyles();
+    } else {
+      idle(function () { scheduleHandlers(); scheduleStyles(); });
+    }
   };
 
   try {
@@ -315,7 +355,8 @@ object UnlockScript {
         style[OBSERVER] = observer;
       }
     }
-    scrub();
+    // A light run only puts the lock back, it does not go looking for tricks.
+    if (!LIGHT) scrub();
   } catch (e) {}
 
   try {

@@ -15,8 +15,10 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import java.util.WeakHashMap
 
 interface BrowserHost {
     fun onPageStarted(url: String, title: String)
@@ -31,6 +33,9 @@ interface BrowserHost {
 }
 
 object WebViewFactory {
+
+    /** The guard that is standing over each page, one per WebView. */
+    private val guards = WeakHashMap<WebView, ScriptHandler>()
 
     const val DESKTOP_UA =
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -88,9 +93,12 @@ object WebViewFactory {
         webView.webViewClient = object : WebViewClient() {
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-                if (settings.overrideProtections) {
+                if (settings.isProtectionsOn(url)) {
                     // a second line of defence for engines without document start scripts
-                    view.evaluateJavascript(UnlockScript.UNLOCK, null)
+                    view.evaluateJavascript(
+                        UnlockScript.forBypassed(settings.bypassedSites),
+                        null
+                    )
                 }
                 host.onPageStarted(url, view.title ?: "")
             }
@@ -198,15 +206,34 @@ object WebViewFactory {
     /**
      * Injects the unlock script before the page runs its own code, so a site
      * never gets the chance to block copying in the first place.
+     *
+     * The script is put back whenever the user changes what should be
+     * protected, and it is taken away again when the user asks for the page
+     * to be left alone.
      */
-    private fun installUnlock(webView: WebView, settings: BrowserSettings) {
+    fun installUnlock(webView: WebView, settings: BrowserSettings) {
+        removeUnlock(webView)
         if (!settings.overrideProtections) return
         try {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-                WebViewCompat.addDocumentStartJavaScript(webView, UnlockScript.UNLOCK, setOf("*"))
+                guards[webView] = WebViewCompat.addDocumentStartJavaScript(
+                    webView,
+                    UnlockScript.forBypassed(settings.bypassedSites),
+                    setOf("*")
+                )
             }
         } catch (error: Throwable) {
             // older engines simply fall back to the injection on page start
+        }
+    }
+
+    /** Takes the guard off a page, so the site is left in peace. */
+    fun removeUnlock(webView: WebView) {
+        val handler = guards.remove(webView) ?: return
+        try {
+            WebViewCompat.removeDocumentStartJavaScript(webView, handler)
+        } catch (error: Throwable) {
+            // the page is already gone
         }
     }
 }
