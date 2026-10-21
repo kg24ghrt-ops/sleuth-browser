@@ -246,7 +246,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
             Toast.makeText(this, R.string.error_voice_off, Toast.LENGTH_SHORT).show()
             return
         }
-        if (!RecognizerIntent.isRecognitionAvailable(this)) {
+        if (!isVoiceAvailable()) {
             Toast.makeText(this, R.string.error_voice_unavailable, Toast.LENGTH_SHORT).show()
             return
         }
@@ -264,6 +264,14 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         } catch (error: Throwable) {
             Toast.makeText(this, R.string.error_voice_unavailable, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /** True when the device has something that can listen. */
+    private fun isVoiceAvailable(): Boolean = try {
+        val probe = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+        packageManager.queryIntentActivities(probe, 0).isNotEmpty()
+    } catch (error: Throwable) {
+        false
     }
 
     private fun handleVoiceResult(result: ActivityResult) {
