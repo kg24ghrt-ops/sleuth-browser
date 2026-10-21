@@ -38,6 +38,7 @@ silently rewritten into searches. See [Detective's rules](#detectives-rules).
 ### It is a real browser
 - Omnibox that understands URLs, search phrases and `localhost:port`
 - Six search engines, switchable (DuckDuckGo, Brave, Google, Bing, Startpage, Wikipedia)
+- **Say where to go** — the microphone button turns speech into the same query a typed one would be
 - Tabs with a switcher sheet, back/forward per tab, home, reload
 - History and bookmarks with instant filtering
 - Downloads through the system download manager
@@ -52,9 +53,13 @@ silently rewritten into searches. See [Detective's rules](#detectives-rules).
 Copy blocks, selection blocks, hidden print stylesheets — the browser does not accept them.
 
 - The unlock script is injected **before the page runs**, so a site never gets the chance to put
-  the lock on: `copy`, `cut`, `paste`, `contextmenu`, `selectstart` and `select` events are stopped
-  in the capture phase, inline `oncopy`/`oncut`/`oncontextmenu` handlers are removed as they appear,
-  and `user-select: none` is overruled with `!important`.
+  the lock on: `copy`, `cut`, `paste`, `contextmenu`, `selectstart`, `select` and `selectionchange`
+  events are stopped in the capture phase, inline `oncopy`/`oncut`/`oncontextmenu` handlers are
+  removed as they appear, and `user-select: none` is overruled with `!important`.
+- **A page that fights back is handled too.** The original event and property tools are taken
+  before the page can change them, the capture surfaces are locked shut so they cannot be put
+  back, the unlock rule is moved to the end of the document so a page rule of the same weight
+  cannot win, and the style element is rebuilt if the page throws it away.
 - **Before every capture the page is put back into a readable state** and given a frame to repaint,
   so a capture is never taken of a page that just hid itself.
 - **A flat picture is treated as a failure.** If the capture comes back as one single colour, the
@@ -72,12 +77,14 @@ picture or copied something. Sleuth takes those pages blind.
 - `visibilitychange`, `focus`, `blur`, `pagehide`, `pageshow`, `freeze`, `resume`, `beforeunload`
   and `unload` are stopped in the capture phase, so the page never hears that the app came to the
   front, went to the back, opened the evidence lab or took a picture.
+- The browser does not go dark in the page either: `document.visibilityState` always reads
+  `visible` and `document.hasFocus()` always says yes, so a page cannot watch the app walk away.
 - The copy, cut, paste and selection events are stopped the same way, so a page cannot log what was
   copied, and it cannot peek at the clipboard afterwards either — `navigator.clipboard.readText`
-  is refused.
-- The official surfaces for detecting or performing a screen capture are taken away:
+  and `navigator.clipboard.read` are refused.
+- The official surfaces for detecting or performing a screen capture are taken away and locked:
   `navigator.mediaDevices.getDisplayMedia` and `window.getScreenDetails` (the screen capture
-  detection API) are replaced with a refusal.
+  detection API) are replaced with a refusal the page cannot remove.
 - The injected script leaves nothing obvious behind: the marker is a javascript property on the
   style element, not an id, a data attribute or a global name, and it is different on every run.
 
@@ -118,10 +125,12 @@ copying, and the user always wins.
 
 Sleuth is a tool, not a companion.
 
-1. It never talks to you. No assistant, no chat, no voice, no narration, no upsell.
+1. It never talks to you. No assistant, no chat, no narration, no upsell. It does not speak
+   aloud either — it only listens when you press the microphone button, and what it hears is a
+   destination or a search, never a conversation.
 2. It never asks questions it can answer itself. Cases are created with a code, not a form.
-3. Everything you type is a destination or a search. `"hey sleuth, who is on my wifi"` becomes a
-   plain web search — it is never answered.
+3. Everything you type or say is a destination or a search. `"hey sleuth, who is on my wifi"`
+   becomes a plain web search — it is never answered.
 4. Feedback is silent and reversible. Toasts and status lines, never modal nags.
 5. Nothing leaves the device unless you export it yourself.
 
