@@ -231,7 +231,8 @@ object WebViewFactory {
     fun removeUnlock(webView: WebView) {
         val handler = guards.remove(webView) ?: return
         try {
-            WebViewCompat.removeDocumentStartJavaScript(webView, handler)
+            // the script goes away from the next page load onwards
+            handler.remove()
         } catch (error: Throwable) {
             // the page is already gone
         }
