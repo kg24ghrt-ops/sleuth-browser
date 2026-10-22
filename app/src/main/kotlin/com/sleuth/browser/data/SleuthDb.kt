@@ -211,6 +211,20 @@ class SleuthDb(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_V
         return out
     }
 
+    /** One query: evidence count per case, instead of one COUNT per case. */
+    fun caseCounts(): Map<Long, Int> {
+        val out = HashMap<Long, Int>()
+        readableDatabase.rawQuery(
+            "SELECT case_id, COUNT(*) FROM evidence GROUP BY case_id",
+            null
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                out[cursor.getLong(0)] = cursor.getInt(1)
+            }
+        }
+        return out
+    }
+
     fun caseById(id: Long): CaseFile? {
         var found: CaseFile? = null
         readableDatabase.rawQuery(

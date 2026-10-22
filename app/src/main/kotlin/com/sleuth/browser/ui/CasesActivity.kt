@@ -43,8 +43,9 @@ class CasesActivity : AppCompatActivity() {
 
     private fun refresh() {
         SleuthIO.submit({
-            // the counts are gathered with the list so the screen never waits on sql
-            Sleuth.db.cases().map { CaseRow(it, Sleuth.db.evidenceCount(it.id)) }
+            // one query for the list, one for the counts — no COUNT per case
+            val counts = Sleuth.db.caseCounts()
+            Sleuth.db.cases().map { CaseRow(it, counts[it.id] ?: 0) }
         }) { rows ->
             if (isFinishing || isDestroyed) return@submit
             adapter.submit(rows)

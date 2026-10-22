@@ -7,7 +7,8 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
+import android.os.Handler
+import android.os.Looper
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -25,6 +26,8 @@ class HistoryActivity : AppCompatActivity() {
     private lateinit var binding: ActivityHistoryBinding
     private val adapter = RecordAdapter()
     private var showingBookmarks = false
+    private val searchDebounce = Handler(Looper.getMainLooper())
+    private var searchRunnable: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,11 +44,18 @@ class HistoryActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
-                refresh()
+                searchRunnable?.let { searchDebounce.removeCallbacks(it) }
+                searchRunnable = { refresh() }
+                searchDebounce.postDelayed(searchRunnable!!, 300)
             }
         })
 
         showHistory()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        searchRunnable?.let { searchDebounce.removeCallbacks(it) }
     }
 
     private fun showHistory() {
