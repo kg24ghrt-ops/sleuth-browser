@@ -67,15 +67,19 @@ stands down the shield next to the address bar shows it, and a tap puts the guar
   at, and the switch in front of you always shows what is happening.
 
 - The unlock script is injected **before the page runs**, so a site never gets the chance to put
-  the lock on: `copy`, `cut`, `paste`, `contextmenu`, `selectstart`, `select` and `selectionchange`
-  events are stopped in the capture phase, inline `oncopy`/`oncut`/`oncontextmenu` handlers are
-  removed as they appear, and `user-select: none` is overruled with `!important`.
+  the lock on: `copy`, `beforecopy`, `cut`, `beforecut`, `paste`, `contextmenu`, `selectstart`,
+  `select`, `selectionchange` and `dragstart` events are stopped in the capture phase, inline
+  `oncopy`/`oncut`/`oncontextmenu` handlers are removed as they appear, and `user-select: none` is
+  overruled with `!important` — with a rule heavy enough that a page rule of the same weight cannot
+  outrank it, and placed last so a tie is won here too.
 - **A page that fights back is handled too.** The original event and property tools are taken
   before the page can change them, the capture surfaces are locked shut so they cannot be put
   back, the unlock rule is moved to the end of the document so a page rule of the same weight
-  cannot win, and the style element is rebuilt if the page throws it away.
+  cannot win, and the style element is rebuilt if the page throws it away — up to a point, after
+  which a page that is deliberately throwing it away is left to it.
 - **Before every capture the page is put back into a readable state** and given a frame to repaint,
-  so a capture is never taken of a page that just hid itself.
+  so a capture is never taken of a page that just hid itself. The run before a capture is a light
+  one: it puts the lock back and does not go looking for tricks again.
 - **A flat picture is treated as a failure.** If the capture comes back as one single colour, the
   page is rendered again by hand and only a picture with real content is filed as evidence.
 - Every trick a page uses is **detected and filed**: when a case is armed, "this page blocked
@@ -92,15 +96,23 @@ picture or copied something. Sleuth takes those pages blind.
   and `unload` are stopped in the capture phase, so the page never hears that the app came to the
   front, went to the back, opened the evidence lab or took a picture.
 - The browser does not go dark in the page either: `document.visibilityState` always reads
-  `visible` and `document.hasFocus()` always says yes, so a page cannot watch the app walk away.
+  `visible` and `document.hasFocus()` always says yes, so a page cannot watch the app walk away —
+  and the masks cannot be taken off again by the page.
 - The copy, cut, paste and selection events are stopped the same way, so a page cannot log what was
   copied, and it cannot peek at the clipboard afterwards either — `navigator.clipboard.readText`
   and `navigator.clipboard.read` are refused.
 - The official surfaces for detecting or performing a screen capture are taken away and locked:
   `navigator.mediaDevices.getDisplayMedia` and `window.getScreenDetails` (the screen capture
-  detection API) are replaced with a refusal the page cannot remove.
-- The injected script leaves nothing obvious behind: the marker is a javascript property on the
-  style element, not an id, a data attribute or a global name, and it is different on every run.
+  detection API) are replaced with a refusal the page cannot remove, and a screen cannot be asked
+  for through the camera either — `getUserMedia` still works for a camera, but a request for a
+  display surface is turned down. The refusals are dressed up to look like the browser's own
+  functions, so a page cannot tell them apart by reading them.
+- **A page full of frames does not pay for the whole guard in every frame.** The frames only get
+  the rules about the text; the watcher that hunts for tricks and the masks that hide the app
+  stay in the page the user is actually looking at.
+- **The injected script leaves nothing obvious behind:** the marker is a javascript property on the
+  style element, not an id, a data attribute or a global name, it has no fixed name to look for,
+  and it is different on every run.
 
 The one trade off: a page that copies to the clipboard itself, with `execCommand('copy')`, loses
 that ability — the browser cannot tell the difference between the page copying and the user

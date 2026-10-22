@@ -22,17 +22,22 @@ import java.util.UUID
  * of the document so a page rule of the same weight cannot win, and the style
  * element is rebuilt if the page throws it away.
  *
+ * The guard stays out of the way of the page as much as it can. It only looks
+ * at the parts of the page that changed, the first sweep waits for a quiet
+ * moment, and a page that keeps throwing the style element away is left to
+ * do it rather than being fought over and over again.
+ *
  * Nothing is left in the page that gives the game away: the marker lives on a
  * javascript property of the injected style element instead of an id, a data
  * attribute or a global name, and it is different on every run.
  */
 object UnlockScript {
 
-    /** A name that does not give the game away. */
-    private val token: String = UUID.randomUUID().toString().replace("-", "").substring(0, 10)
+    /** A name that does not give the game away, and is different on every run. */
+    private val token: String = UUID.randomUUID().toString().replace("-", "").substring(0, 12)
 
     /** The mark that lets the browser find its own style element again. */
-    private val marker: String = "__sl_" + token
+    private val marker: String = "__" + token
 
     /** Where the tricks the guard caught are written down. */
     private const val CODES_SUFFIX = "c"
@@ -43,13 +48,23 @@ object UnlockScript {
     /** Where the event stopper is kept, so it is only ever registered once. */
     private const val STOP_SUFFIX = "p"
 
-    /** Events the page must never hear about. */
-    private val hiddenEvents = listOf(
-        "copy", "cut", "paste", "contextmenu", "selectstart", "select",
-        "selectionchange",
+    /** How many times the style element may be thrown away before the guard gives up. */
+    private const val MAX_REBUILDS = 25
+
+    /** Events that matter wherever the text is. */
+    private val textEvents = listOf(
+        "copy", "beforecopy", "cut", "beforecut", "paste",
+        "contextmenu", "selectstart", "select", "selectionchange", "dragstart"
+    )
+
+    /** Events that only matter in the page the user is looking at. */
+    private val browserEvents = listOf(
         "visibilitychange", "focus", "blur", "pagehide", "pageshow",
         "freeze", "resume", "beforeunload", "unload"
     )
+
+    /** Events the page must never hear about. */
+    private val hiddenEvents = textEvents + browserEvents
 
     /** The unlock script, injected before the page runs its own code. */
     val UNLOCK: String = buildScript(emptySet(), light = false)
@@ -66,8 +81,22 @@ object UnlockScript {
      * The sites are written into the script, so the guard stands down on its
      * own the moment it lands on one of them.
      */
-    fun forBypassed(bypassed: Set<String>, light: Boolean = false): String =
-        buildScript(bypassed, light)
+    fun forBypassed(bypassed: Set<String>, light: Boolean = false): String {
+        val cached = cachedScript
+        if (cached != null && cachedLight == light && cachedHosts == bypassed) {
+            return cached
+        }
+        val script = buildScript(bypassed, light)
+        cachedHosts = bypassed
+        cachedLight = light
+        cachedScript = script
+        return script
+    }
+
+    /** The last script that was built, so the same one is not built twice. */
+    private var cachedHosts: Set<String>? = null
+    private var cachedLight = false
+    private var cachedScript: String? = null
 
     /**
      * Reports what the page is doing to protect itself. The answer is a short
@@ -78,6 +107,7 @@ object UnlockScript {
 
     private fun buildScript(bypassed: Set<String>, light: Boolean): String {
         val events = hiddenEvents.joinToString(",") { "'$it'" }
+        val frameEvents = textEvents.joinToString(",") { "'$it'" }
         val hosts = bypassed.sorted().joinToString(",") { "'${it.replace("'", "")}'" }
         return """
 (function(){
@@ -87,6 +117,11 @@ object UnlockScript {
   var STOP = MARK + '$STOP_SUFFIX';
   var LIGHT = $light;
   var BYPASS = [$hosts];
+
+  // Only the page the user is looking at is worth watching closely. A page
+  // full of frames would pay for the whole guard in every one of them.
+  var TOP = true;
+  try { TOP = (window.top === window); } catch (e) { TOP = true; }
 
   // A site the user left alone is not touched at all.
   try {
@@ -108,12 +143,19 @@ object UnlockScript {
   try { nativeStop = Event.prototype.stopImmediatePropagation; } catch (e) {}
   try { nativeDefine = Object.defineProperty; } catch (e) {}
 
-  var css = 'html,html body,html body *,:root body *{-webkit-user-select:text !important;' +
+  // The rule is heavy on purpose, so a page rule of the same weight cannot
+  // outrank it, and it goes in last, so a tie is won here as well.
+  var css = 'html,html body,html body *,:root body *,:root:root body *{-webkit-user-select:text !important;' +
             'user-select:text !important;-webkit-touch-callout:default !important;}';
 
   var style = null;
+  var rebuilds = 0;
 
   var findStyle = function () {
+    // our own element is preferred, a copy made by the page is not
+    try {
+      if (style && style[MARK] && style.parentNode) return style;
+    } catch (e) {}
     var list = document.getElementsByTagName('style');
     for (var i = 0; i < list.length; i++) { if (list[i][MARK]) return list[i]; }
     return null;
@@ -180,10 +222,11 @@ object UnlockScript {
       // does not end up with a pile of listeners.
       var fn = (style && style[STOP]) ? style[STOP] : stop;
       if (style) style[STOP] = fn;
-      var names = [$events];
+      // A frame only needs to know about the text, and the capture phase
+      // always starts at the window, so one place is enough.
+      var names = TOP ? [$events] : [$frameEvents];
       for (var n = 0; n < names.length; n++) {
         window.addEventListener(names[n], fn, true);
-        document.addEventListener(names[n], fn, true);
       }
     } catch (e) {}
   };
@@ -191,31 +234,24 @@ object UnlockScript {
   // Inline handlers are taken off, and written down as evidence.
   var takeHandler = function (el) {
     try {
-      if (!el || el.nodeType !== 1) return;
-      if (el.hasAttribute('oncopy')) { record('oncopy'); el.removeAttribute('oncopy'); }
-      if (el.hasAttribute('oncut')) { record('oncut'); el.removeAttribute('oncut'); }
-      if (el.hasAttribute('oncontextmenu')) { record('oncontextmenu'); el.removeAttribute('oncontextmenu'); }
-    } catch (e) {}
+      if (!el || el.nodeType !== 1) return false;
+      var hit = false;
+      if (el.hasAttribute('oncopy')) { record('oncopy'); el.removeAttribute('oncopy'); hit = true; }
+      if (el.hasAttribute('oncut')) { record('oncut'); el.removeAttribute('oncut'); hit = true; }
+      if (el.hasAttribute('oncontextmenu')) { record('oncontextmenu'); el.removeAttribute('oncontextmenu'); hit = true; }
+      return hit;
+    } catch (e) { return false; }
   };
 
-  var scrubHandlers = function () {
+  // The work is done on the node that changed, not on the whole page.
+  var takeHandlers = function (node) {
     try {
-      var nodes = document.querySelectorAll('[oncopy],[oncut],[oncontextmenu]');
-      for (var k = 0; k < nodes.length; k++) takeHandler(nodes[k]);
+      if (!node || node.nodeType !== 1) return;
+      if (takeHandler(node)) return;
+      if (!node.querySelectorAll) return;
+      var inner = node.querySelectorAll('[oncopy],[oncut],[oncontextmenu]');
+      for (var k = 0; k < inner.length; k++) takeHandler(inner[k]);
     } catch (e) {}
-  };
-
-  // The work is done on the nodes that changed, not on the whole page.
-  var scrubNodes = function (nodes) {
-    for (var i = 0; i < nodes.length; i++) {
-      var el = nodes[i];
-      if (!el || el.nodeType !== 1) continue;
-      takeHandler(el);
-      try {
-        var inner = el.querySelectorAll('[oncopy],[oncut],[oncontextmenu]');
-        for (var k = 0; k < inner.length; k++) takeHandler(inner[k]);
-      } catch (e) {}
-    }
   };
 
   // A page can also lock the text down with an inline style.
@@ -230,44 +266,15 @@ object UnlockScript {
     } catch (e) {}
   };
 
-  var scrubStyles = function () {
+  // One sweep over the page, for the tricks that were already there.
+  var sweep = function () {
     try {
-      var all = document.querySelectorAll('[style]');
-      var limit = all.length < 800 ? all.length : 800;
-      for (var m = 0; m < limit; m++) takeStyle(all[m]);
+      var nodes = document.querySelectorAll('[oncopy],[oncut],[oncontextmenu]');
+      for (var k = 0; k < nodes.length; k++) takeHandler(nodes[k]);
+      var styled = document.querySelectorAll('[style]');
+      var limit = styled.length < 800 ? styled.length : 800;
+      for (var m = 0; m < limit; m++) takeStyle(styled[m]);
     } catch (e) {}
-  };
-
-  var handlerTimer = null;
-  var styleTimer = null;
-  var needFull = false;
-  var needFullStyles = false;
-  var pending = [];
-  var pendingStyled = [];
-
-  var scheduleHandlers = function () {
-    if (handlerTimer) clearTimeout(handlerTimer);
-    handlerTimer = setTimeout(function () {
-      handlerTimer = null;
-      try {
-        if (needFull) { needFull = false; scrubHandlers(); }
-        if (pending.length) { scrubNodes(pending); pending = []; }
-      } catch (e) {}
-    }, 200);
-  };
-
-  var scheduleStyles = function () {
-    if (styleTimer) clearTimeout(styleTimer);
-    styleTimer = setTimeout(function () {
-      styleTimer = null;
-      try {
-        if (needFullStyles) { needFullStyles = false; scrubStyles(); }
-        if (pendingStyled.length) {
-          for (var i = 0; i < pendingStyled.length; i++) takeStyle(pendingStyled[i]);
-          pendingStyled = [];
-        }
-      } catch (e) {}
-    }, 400);
   };
 
   // Work that is not urgent waits for a quiet moment, so a page that is still
@@ -282,16 +289,15 @@ object UnlockScript {
     setTimeout(work, 200);
   };
 
-  var scrub = function () {
+  // The page threw the style element away, so it is built again. A page that
+  // keeps throwing it away is left to it, after a while.
+  var lost = function () {
+    var still = false;
+    try { still = document.documentElement.contains(style); } catch (e) { still = false; }
+    if (still) return;
+    rebuilds++;
+    if (rebuilds > $MAX_REBUILDS) return;
     ensure();
-    needFull = true;
-    needFullStyles = true;
-    if (LIGHT) {
-      scheduleHandlers();
-      scheduleStyles();
-    } else {
-      idle(function () { scheduleHandlers(); scheduleStyles(); });
-    }
   };
 
   try {
@@ -300,51 +306,33 @@ object UnlockScript {
 
     // One observer for the whole page. It watches for the tricks and for the
     // moment the page throws our style element away.
-    if (style && window.MutationObserver && document.documentElement) {
+    if (TOP && style && window.MutationObserver && document.documentElement) {
       if (!style[OBSERVER]) {
         var observer = new MutationObserver(function (records) {
-          var added = [];
-          var styled = [];
-          var lost = false;
-          for (var i = 0; i < records.length; i++) {
-            var entry = records[i];
-            if (entry.target === style) continue;
-            if (entry.type === 'childList') {
-              if (entry.addedNodes) {
-                for (var a = 0; a < entry.addedNodes.length; a++) {
-                  var node = entry.addedNodes[a];
-                  if (node !== style && node && node.nodeType === 1) added.push(node);
+          try {
+            for (var i = 0; i < records.length; i++) {
+              var entry = records[i];
+              if (entry.target === style) continue;
+              if (entry.type === 'childList') {
+                if (entry.addedNodes) {
+                  for (var a = 0; a < entry.addedNodes.length; a++) {
+                    takeHandlers(entry.addedNodes[a]);
+                  }
                 }
-              }
-              if (entry.removedNodes) {
-                for (var d = 0; d < entry.removedNodes.length; d++) {
-                  if (entry.removedNodes[d] === style) lost = true;
+                if (entry.removedNodes) {
+                  for (var d = 0; d < entry.removedNodes.length; d++) {
+                    if (entry.removedNodes[d] === style) lost();
+                  }
                 }
+                continue;
               }
-              continue;
+              if (entry.attributeName === 'style') {
+                takeStyle(entry.target);
+                continue;
+              }
+              takeHandlers(entry.target);
             }
-            if (entry.attributeName === 'style') {
-              var value = '';
-              try { value = (entry.target.getAttribute('style') || '').toLowerCase(); } catch (e) {}
-              if (value.indexOf('user-select') !== -1) styled.push(entry.target);
-              continue;
-            }
-            added.push(entry.target);
-          }
-          if (lost) {
-            // the page threw the style element away, so it is built again
-            var still = false;
-            try { still = document.documentElement.contains(style); } catch (e) { still = false; }
-            if (!still) scrub();
-          }
-          if (added.length) {
-            for (var p = 0; p < added.length; p++) pending.push(added[p]);
-            scheduleHandlers();
-          }
-          if (styled.length) {
-            for (var q = 0; q < styled.length; q++) pendingStyled.push(styled[q]);
-            scheduleStyles();
-          }
+          } catch (e) {}
         });
         observer.observe(document.documentElement, {
           childList: true,
@@ -355,16 +343,34 @@ object UnlockScript {
         style[OBSERVER] = observer;
       }
     }
+
     // A light run only puts the lock back, it does not go looking for tricks.
-    if (!LIGHT) scrub();
+    if (!LIGHT && TOP) idle(sweep);
   } catch (e) {}
 
   try {
     // The official screen capture surfaces are taken away, and locked so the
     // page cannot put them back.
-    var refuse = function (what) {
-      return function () { return Promise.reject(new Error(what)); };
+    var fail = function (what) {
+      try { return Promise.reject(new DOMException(what, 'NotAllowedError')); }
+      catch (e) { return Promise.reject(new Error(what)); }
     };
+
+    // A refusal that looks like the thing it replaces.
+    var nativeLooking = function (name, fn) {
+      try {
+        nativeDefine.call(Object, fn, 'name', { value: name, configurable: true });
+      } catch (e) {}
+      try {
+        nativeDefine.call(Object, fn, 'toString', {
+          value: function () { return 'function ' + name + '() { [native code] }'; },
+          writable: true,
+          configurable: true
+        });
+      } catch (e) {}
+      return fn;
+    };
+
     var lock = function (host, name, value) {
       if (!host) return false;
       try {
@@ -378,34 +384,85 @@ object UnlockScript {
       try { host[name] = value; return true; } catch (e) {}
       return false;
     };
+
     if (navigator.mediaDevices) {
-      lock(navigator.mediaDevices, 'getDisplayMedia', refuse('Screen capture is not available'));
+      lock(
+        navigator.mediaDevices,
+        'getDisplayMedia',
+        nativeLooking('getDisplayMedia', function () {
+          return fail('Screen capture is not available');
+        })
+      );
+      // A screen can also be asked for through the camera.
+      if (navigator.mediaDevices.getUserMedia) {
+        var realGetUserMedia = navigator.mediaDevices.getUserMedia;
+        lock(
+          navigator.mediaDevices,
+          'getUserMedia',
+          nativeLooking('getUserMedia', function (constraints) {
+            try {
+              var video = constraints ? constraints.video : null;
+              if (video && (video.displaySurface || video.monitorSurfaceSurfaces ||
+                            video.surfaceSwitching)) {
+                return fail('Screen capture is not available');
+              }
+            } catch (e) {}
+            return realGetUserMedia.call(navigator.mediaDevices, constraints);
+          })
+        );
+      }
     }
     if (window.getScreenDetails) {
-      lock(window, 'getScreenDetails', refuse('Screen capture is not available'));
+      lock(
+        window,
+        'getScreenDetails',
+        nativeLooking('getScreenDetails', function () {
+          return fail('Screen capture is not available');
+        })
+      );
     }
     // A page must not be able to read what the user just copied.
     if (navigator.clipboard) {
-      lock(navigator.clipboard, 'readText', refuse('Clipboard reading is not available'));
+      lock(
+        navigator.clipboard,
+        'readText',
+        nativeLooking('readText', function () {
+          return fail('Clipboard reading is not available');
+        })
+      );
       if (navigator.clipboard.read) {
-        lock(navigator.clipboard, 'read', refuse('Clipboard reading is not available'));
+        lock(
+          navigator.clipboard,
+          'read',
+          nativeLooking('read', function () {
+            return fail('Clipboard reading is not available');
+          })
+        );
       }
     }
   } catch (e) {}
 
   try {
-    // The page must not be able to see the browser leave the screen.
-    var docProto = window.Document ? window.Document.prototype : null;
+    // The page must not be able to see the browser leave the screen. Each
+    // mask is set on its own, so one that cannot be set does not stop the
+    // others.
+    var docProto = (TOP && window.Document) ? window.Document.prototype : null;
     if (docProto && nativeDefine) {
-      nativeDefine.call(Object, docProto, 'visibilityState', {
-        get: function () { return 'visible'; }, configurable: true
-      });
-      nativeDefine.call(Object, docProto, 'hidden', {
-        get: function () { return false; }, configurable: true
-      });
-      nativeDefine.call(Object, docProto, 'hasFocus', {
-        value: function () { return true; }, writable: true, configurable: true
-      });
+      try {
+        nativeDefine.call(Object, docProto, 'visibilityState', {
+          get: function () { return 'visible'; }, configurable: false
+        });
+      } catch (e) {}
+      try {
+        nativeDefine.call(Object, docProto, 'hidden', {
+          get: function () { return false; }, configurable: false
+        });
+      } catch (e) {}
+      try {
+        nativeDefine.call(Object, docProto, 'hasFocus', {
+          value: function () { return true; }, writable: true, configurable: false
+        });
+      } catch (e) {}
     }
   } catch (e) {}
 })();

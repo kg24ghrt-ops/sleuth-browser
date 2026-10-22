@@ -1,6 +1,7 @@
 package com.sleuth.browser.browser
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,6 +39,59 @@ class UnlockScriptTest {
     @Test
     fun `the page cannot hear that the text was selected`() {
         assertTrue(UnlockScript.UNLOCK.contains("'selectionchange'"))
+        assertTrue(UnlockScript.UNLOCK.contains("'dragstart'"))
+    }
+
+    @Test
+    fun `the page cannot stop the copy before it happens`() {
+        assertTrue(UnlockScript.UNLOCK.contains("'beforecopy'"))
+        assertTrue(UnlockScript.UNLOCK.contains("'beforecut'"))
+    }
+
+    @Test
+    fun `a screen cannot be asked for through the camera either`() {
+        assertTrue(UnlockScript.UNLOCK.contains("getUserMedia"))
+        assertTrue(UnlockScript.UNLOCK.contains("displaySurface"))
+    }
+
+    @Test
+    fun `a refusal looks like the thing it replaces`() {
+        assertTrue(UnlockScript.UNLOCK.contains("[native code]"))
+    }
+
+    @Test
+    fun `the masks cannot be taken off again`() {
+        assertTrue(UnlockScript.UNLOCK.contains("configurable: false"))
+    }
+
+    @Test
+    fun `the marker has no fixed name to look for`() {
+        assertFalse(UnlockScript.UNLOCK.contains("__sl_"))
+        assertFalse(UnlockScript.PROBE.contains("__sl_"))
+    }
+
+    @Test
+    fun `a hostile page is not fought for ever`() {
+        assertTrue(UnlockScript.UNLOCK.contains("rebuilds >"))
+    }
+
+    @Test
+    fun `a frame does not carry the whole guard`() {
+        assertTrue(UnlockScript.UNLOCK.contains("window.top === window"))
+        assertTrue(UnlockScript.UNLOCK.contains("TOP ? "))
+    }
+
+    @Test
+    fun `the guard listens on the window only`() {
+        assertFalse(UnlockScript.UNLOCK.contains("document.addEventListener"))
+    }
+
+    @Test
+    fun `the same script is not built twice`() {
+        val first = UnlockScript.forBypassed(setOf("example.com"))
+        val second = UnlockScript.forBypassed(setOf("example.com"))
+        assertSame(first, second)
+        assertFalse(UnlockScript.forBypassed(setOf("other.test")) === first)
     }
 
     @Test
