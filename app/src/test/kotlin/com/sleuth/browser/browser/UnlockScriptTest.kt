@@ -60,8 +60,9 @@ class UnlockScriptTest {
     }
 
     @Test
-    fun `the masks cannot be taken off again`() {
-        assertTrue(UnlockScript.UNLOCK.contains("configurable: false"))
+    fun `the masks keep the shape the browser gave them`() {
+        assertTrue(UnlockScript.UNLOCK.contains("get: visible"))
+        assertTrue(UnlockScript.UNLOCK.contains("enumerable: true"))
     }
 
     @Test
@@ -78,7 +79,7 @@ class UnlockScriptTest {
     @Test
     fun `a frame does not carry the whole guard`() {
         assertTrue(UnlockScript.UNLOCK.contains("window.top === window"))
-        assertTrue(UnlockScript.UNLOCK.contains("TOP && style && window.MutationObserver"))
+        assertTrue(UnlockScript.UNLOCK.contains("TOP && state && window.MutationObserver"))
     }
 
     @Test
@@ -105,9 +106,8 @@ class UnlockScriptTest {
     }
 
     @Test
-    fun `the rule goes to the very end of the document`() {
-        assertTrue(UnlockScript.UNLOCK.contains("document.documentElement"))
-        assertTrue(UnlockScript.UNLOCK.contains("parent.appendChild(style)"))
+    fun `a rule without an adopted sheet goes to the end of the document`() {
+        assertTrue(UnlockScript.UNLOCK.contains("parent.appendChild(element)"))
     }
 
     @Test
@@ -143,9 +143,10 @@ class UnlockScriptTest {
     }
 
     @Test
-    fun `the capture surfaces are locked so they cannot come back`() {
-        assertTrue(UnlockScript.UNLOCK.contains("configurable: false"))
-        assertTrue(UnlockScript.UNLOCK.contains("writable: false"))
+    fun `the capture surfaces cannot be put back`() {
+        assertTrue(UnlockScript.UNLOCK.contains("lockMethod"))
+        assertTrue(UnlockScript.UNLOCK.contains("Object.getPrototypeOf"))
+        assertTrue(UnlockScript.UNLOCK.contains("value: value, writable: true"))
     }
 
     @Test
