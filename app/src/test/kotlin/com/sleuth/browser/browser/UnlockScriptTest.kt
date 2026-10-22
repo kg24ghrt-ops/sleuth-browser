@@ -78,12 +78,36 @@ class UnlockScriptTest {
     @Test
     fun `a frame does not carry the whole guard`() {
         assertTrue(UnlockScript.UNLOCK.contains("window.top === window"))
-        assertTrue(UnlockScript.UNLOCK.contains("TOP ? "))
+        assertTrue(UnlockScript.UNLOCK.contains("TOP && style && window.MutationObserver"))
     }
 
     @Test
     fun `the guard listens on the window only`() {
         assertFalse(UnlockScript.UNLOCK.contains("document.addEventListener"))
+    }
+
+    @Test
+    fun `the locks are put on the prototype where the method lives`() {
+        assertTrue(UnlockScript.UNLOCK.contains("Object.getPrototypeOf"))
+        assertTrue(UnlockScript.UNLOCK.contains("lockMethod"))
+    }
+
+    @Test
+    fun `the careful way of reading a function is dressed up as well`() {
+        assertTrue(UnlockScript.UNLOCK.contains("Function.prototype.toString"))
+        assertTrue(UnlockScript.UNLOCK.contains("nativeToString.call(this)"))
+    }
+
+    @Test
+    fun `a page cannot hide a handler where the copy cannot reach it`() {
+        assertTrue(UnlockScript.UNLOCK.contains("EventTarget.prototype.addEventListener"))
+        assertTrue(UnlockScript.UNLOCK.contains("Event.prototype.preventDefault"))
+    }
+
+    @Test
+    fun `the rule goes to the very end of the document`() {
+        assertTrue(UnlockScript.UNLOCK.contains("document.documentElement"))
+        assertTrue(UnlockScript.UNLOCK.contains("parent.appendChild(style)"))
     }
 
     @Test

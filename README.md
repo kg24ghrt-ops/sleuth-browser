@@ -71,7 +71,12 @@ stands down the shield next to the address bar shows it, and a tap puts the guar
   `select`, `selectionchange` and `dragstart` events are stopped in the capture phase, inline
   `oncopy`/`oncut`/`oncontextmenu` handlers are removed as they appear, and `user-select: none` is
   overruled with `!important` — with a rule heavy enough that a page rule of the same weight cannot
-  outrank it, and placed last so a tie is won here too.
+  outrank it, and put at the very end of the document, so every rule the page wrote comes before
+  it and cannot win a tie either.
+- **A handler that hides where the copy cannot reach it is handled too.** `copy` and `paste` do not
+  cross a shadow boundary, so a page can put its handler inside one where the window never hears
+  it. The page is not allowed to register such a handler at all, and a handler that is already
+  there — an inline `oncopy` attribute, say — cannot cancel the copy either.
 - **A page that fights back is handled too.** The original event and property tools are taken
   before the page can change them, the capture surfaces are locked shut so they cannot be put
   back, the unlock rule is moved to the end of the document so a page rule of the same weight
@@ -105,11 +110,12 @@ picture or copied something. Sleuth takes those pages blind.
   `navigator.mediaDevices.getDisplayMedia` and `window.getScreenDetails` (the screen capture
   detection API) are replaced with a refusal the page cannot remove, and a screen cannot be asked
   for through the camera either — `getUserMedia` still works for a camera, but a request for a
-  display surface is turned down. The refusals are dressed up to look like the browser's own
-  functions, so a page cannot tell them apart by reading them.
-- **A page full of frames does not pay for the whole guard in every frame.** The frames only get
-  the rules about the text; the watcher that hunts for tricks and the masks that hide the app
-  stay in the page the user is actually looking at.
+  display surface is turned down. The lock goes on the prototype, where the browser keeps the real
+  method, so calling the method the careful way leads to the same refusal. The refusals are
+  dressed up to look like the browser's own functions, even when they are read the careful way.
+- **A page full of frames does not pay for the whole guard in every frame.** The watcher that hunts
+  for tricks stays in the page the user is actually looking at; every frame is still covered by the
+  events and by the masks.
 - **The injected script leaves nothing obvious behind:** the marker is a javascript property on the
   style element, not an id, a data attribute or a global name, it has no fixed name to look for,
   and it is different on every run.

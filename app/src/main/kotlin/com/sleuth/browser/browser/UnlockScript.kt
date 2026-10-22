@@ -18,9 +18,9 @@ import java.util.UUID
  *
  * A page that fights back is handled as well. The originals of the tools the
  * guard needs are kept before the page can change them, the capture surfaces
- * are locked so they cannot be put back, the unlock rule is moved to the end
- * of the document so a page rule of the same weight cannot win, and the style
- * element is rebuilt if the page throws it away.
+ * are locked on the prototype where they really live, the unlock rule is put
+ * at the very end of the document so a page rule of the same weight cannot
+ * win, and the style element is rebuilt if the page throws it away.
  *
  * The guard stays out of the way of the page as much as it can. It only looks
  * at the parts of the page that changed, the first sweep waits for a quiet
@@ -29,7 +29,8 @@ import java.util.UUID
  *
  * Nothing is left in the page that gives the game away: the marker lives on a
  * javascript property of the injected style element instead of an id, a data
- * attribute or a global name, and it is different on every run.
+ * attribute or a global name, it has no fixed name to look for, and it is
+ * different on every run.
  */
 object UnlockScript {
 
@@ -46,7 +47,22 @@ object UnlockScript {
     private const val OBSERVER_SUFFIX = "o"
 
     /** Where the event stopper is kept, so it is only ever registered once. */
-    private const val STOP_SUFFIX = "p"
+    private const val STOP_SUFFIX = "s"
+
+    /** Where the native listener is kept, so the guard never builds on itself. */
+    private const val ADD_SUFFIX = "a"
+
+    /** Where the native preventDefault is kept. */
+    private const val PREVENT_SUFFIX = "v"
+
+    /** Where the native toString is kept. */
+    private const val TOSTRING_SUFFIX = "t"
+
+    /** Where the list of dressed up functions is kept. */
+    private const val WRAPPED_SUFFIX = "w"
+
+    /** Where the dressed up toString is kept. */
+    private const val SPOOF_SUFFIX = "f"
 
     /** How many times the style element may be thrown away before the guard gives up. */
     private const val MAX_REBUILDS = 25
@@ -82,32 +98,22 @@ object UnlockScript {
      * own the moment it lands on one of them.
      */
     fun forBypassed(bypassed: Set<String>, light: Boolean = false): String {
-        val cached = cachedScript
-        if (cached != null && cachedLight == light && cachedHosts == bypassed) {
-            return cached
+        val cached = cached
+        if (cached != null && cached.light == light && cached.hosts == bypassed) {
+            return cached.script
         }
         val script = buildScript(bypassed, light)
-        cachedHosts = bypassed
-        cachedLight = light
-        cachedScript = script
+        cached = Cached(bypassed, light, script)
         return script
     }
 
     /** The last script that was built, so the same one is not built twice. */
-    private var cachedHosts: Set<String>? = null
-    private var cachedLight = false
-    private var cachedScript: String? = null
+    private class Cached(val hosts: Set<String>, val light: Boolean, val script: String)
 
-    /**
-     * Reports what the page is doing to protect itself. The answer is a short
-     * list of codes, one per trick. The tricks the guard caught are read back
-     * from the page, and the rest is looked for in the page's own stylesheets.
-     */
-    val PROBE: String = buildProbe()
+    private var cached: Cached? = null
 
     private fun buildScript(bypassed: Set<String>, light: Boolean): String {
         val events = hiddenEvents.joinToString(",") { "'$it'" }
-        val frameEvents = textEvents.joinToString(",") { "'$it'" }
         val hosts = bypassed.sorted().joinToString(",") { "'${it.replace("'", "")}'" }
         return """
 (function(){
@@ -115,13 +121,13 @@ object UnlockScript {
   var CODES = MARK + '$CODES_SUFFIX';
   var OBSERVER = MARK + '$OBSERVER_SUFFIX';
   var STOP = MARK + '$STOP_SUFFIX';
+  var ADD = MARK + '$ADD_SUFFIX';
+  var PREVENT = MARK + '$PREVENT_SUFFIX';
+  var TOSTRING = MARK + '$TOSTRING_SUFFIX';
+  var WRAPPED = MARK + '$WRAPPED_SUFFIX';
+  var SPOOF = MARK + '$SPOOF_SUFFIX';
   var LIGHT = $light;
   var BYPASS = [$hosts];
-
-  // Only the page the user is looking at is worth watching closely. A page
-  // full of frames would pay for the whole guard in every one of them.
-  var TOP = true;
-  try { TOP = (window.top === window); } catch (e) { TOP = true; }
 
   // A site the user left alone is not touched at all.
   try {
@@ -135,6 +141,11 @@ object UnlockScript {
       }
     }
   } catch (e) {}
+
+  // Only the page the user is looking at is worth watching closely. A page
+  // full of frames would pay for the whole guard in every one of them.
+  var TOP = true;
+  try { TOP = (window.top === window); } catch (e) { TOP = true; }
 
   // The page may try to take the tools away. The originals are kept here,
   // before the page gets a chance to change them.
@@ -150,6 +161,7 @@ object UnlockScript {
 
   var style = null;
   var rebuilds = 0;
+  var wrapped = [];
 
   var findStyle = function () {
     // our own element is preferred, a copy made by the page is not
@@ -173,13 +185,13 @@ object UnlockScript {
     } catch (e) {}
   };
 
-  // Our rule goes in last, so a page rule of the same weight cannot win.
+  // Our rule goes to the very end of the document, so every rule the page
+  // wrote comes before it and cannot win a tie.
   var place = function () {
     try {
-      var parent = style.parentNode;
+      var parent = document.documentElement;
       if (!parent) return;
       if (parent.lastChild === style) return;
-      parent.removeChild(style);
       parent.appendChild(style);
     } catch (e) {}
   };
@@ -194,10 +206,15 @@ object UnlockScript {
         found.type = 'text/css';
         found[MARK] = true;
         if (old) {
-          // the record and the watcher move across to the new element
+          // everything the guard kept moves across to the new element
           try { if (old[CODES]) found[CODES] = old[CODES]; } catch (e) {}
           try { if (old[OBSERVER]) found[OBSERVER] = old[OBSERVER]; } catch (e) {}
           try { if (old[STOP]) found[STOP] = old[STOP]; } catch (e) {}
+          try { if (old[ADD]) found[ADD] = old[ADD]; } catch (e) {}
+          try { if (old[PREVENT]) found[PREVENT] = old[PREVENT]; } catch (e) {}
+          try { if (old[TOSTRING]) found[TOSTRING] = old[TOSTRING]; } catch (e) {}
+          try { if (old[WRAPPED]) found[WRAPPED] = old[WRAPPED]; } catch (e) {}
+          try { if (old[SPOOF]) found[SPOOF] = old[SPOOF]; } catch (e) {}
         }
         (document.head || document.documentElement).appendChild(found);
       } catch (e) { found = null; }
@@ -208,6 +225,112 @@ object UnlockScript {
     place();
     return style;
   };
+
+  ensure();
+
+  // The originals are kept across runs, so the guard never builds on itself.
+  var nativeAdd = null;
+  var nativePrevent = null;
+  var nativeToString = null;
+  try {
+    nativeAdd = (style && style[ADD]) ? style[ADD] : EventTarget.prototype.addEventListener;
+  } catch (e) {}
+  try {
+    nativePrevent = (style && style[PREVENT]) ? style[PREVENT] : Event.prototype.preventDefault;
+  } catch (e) {}
+  try {
+    nativeToString = (style && style[TOSTRING]) ? style[TOSTRING] : Function.prototype.toString;
+  } catch (e) {}
+  if (style) {
+    style[ADD] = nativeAdd;
+    style[PREVENT] = nativePrevent;
+    style[TOSTRING] = nativeToString;
+    try { if (style[WRAPPED]) wrapped = style[WRAPPED]; } catch (e) {}
+    style[WRAPPED] = wrapped;
+  }
+
+  // The events the page must never hear about, and must never be able to
+  // cancel.
+  var guarded = { copy: 1, beforecopy: 1, cut: 1, beforecut: 1, paste: 1,
+                  contextmenu: 1, select: 1, selectstart: 1,
+                  selectionchange: 1, dragstart: 1 };
+
+  // A dressed up function that cannot be told apart from the browser's own,
+  // not even by the careful way of reading it.
+  var nativeLooking = function (name, fn) {
+    try {
+      nativeDefine.call(Object, fn, 'name', { value: name, configurable: true });
+    } catch (e) {}
+    try {
+      nativeDefine.call(Object, fn, 'toString', {
+        value: function () { return 'function ' + name + '() { [native code] }'; },
+        writable: true,
+        configurable: true
+      });
+    } catch (e) {}
+    wrapped.push(fn);
+    return fn;
+  };
+
+  try {
+    // Function.prototype.toString reads the real source of a function, so the
+    // careful way of reading it is dressed up as well.
+    var spoof = null;
+    try { spoof = style ? style[SPOOF] : null; } catch (e) {}
+    if (!spoof && nativeDefine && nativeToString) {
+      spoof = function () {
+        try {
+          if (this === spoof) return 'function toString() { [native code] }';
+          for (var i = 0; i < wrapped.length; i++) {
+            if (this === wrapped[i]) {
+              var name = '';
+              try { name = this.name || ''; } catch (e) {}
+              return 'function ' + name + '() { [native code] }';
+            }
+          }
+        } catch (e) {}
+        return nativeToString.call(this);
+      };
+      nativeDefine.call(Object, Function.prototype, 'toString', {
+        value: spoof, writable: true, enumerable: false, configurable: true
+      });
+      wrapped.push(spoof);
+    }
+    if (style && spoof) style[SPOOF] = spoof;
+  } catch (e) {}
+
+  try {
+    // A page that hides a handler in a shadow tree, where the copy event
+    // never reaches the window, is not allowed to register one at all.
+    if (nativeAdd && nativeDefine) {
+      var patchedAdd = function (type, listener, options) {
+        try {
+          if (guarded[String(type).toLowerCase()]) return;
+        } catch (e) {}
+        return nativeAdd.call(this, type, listener, options);
+      };
+      nativeDefine.call(Object, EventTarget.prototype, 'addEventListener', {
+        value: patchedAdd, writable: true, enumerable: true, configurable: true
+      });
+      wrapped.push(patchedAdd);
+    }
+  } catch (e) {}
+
+  try {
+    // And a handler that is already there cannot cancel the copy either.
+    if (nativePrevent && nativeDefine) {
+      var patchedPrevent = function () {
+        try {
+          if (guarded[String(this.type).toLowerCase()]) return;
+        } catch (e) {}
+        return nativePrevent.call(this);
+      };
+      nativeDefine.call(Object, Event.prototype, 'preventDefault', {
+        value: patchedPrevent, writable: true, enumerable: true, configurable: true
+      });
+      wrapped.push(patchedPrevent);
+    }
+  } catch (e) {}
 
   var stop = function (event) {
     try {
@@ -222,11 +345,16 @@ object UnlockScript {
       // does not end up with a pile of listeners.
       var fn = (style && style[STOP]) ? style[STOP] : stop;
       if (style) style[STOP] = fn;
-      // A frame only needs to know about the text, and the capture phase
-      // always starts at the window, so one place is enough.
-      var names = TOP ? [$events] : [$frameEvents];
+      // The capture phase always starts at the window, so one place is
+      // enough, and every frame gets the same cover. The original is used,
+      // because the guard has taught the page not to register these events.
+      var names = [$events];
       for (var n = 0; n < names.length; n++) {
-        window.addEventListener(names[n], fn, true);
+        if (nativeAdd) {
+          nativeAdd.call(window, names[n], fn, true);
+        } else {
+          window.addEventListener(names[n], fn, true);
+        }
       }
     } catch (e) {}
   };
@@ -243,11 +371,12 @@ object UnlockScript {
     } catch (e) { return false; }
   };
 
-  // The work is done on the node that changed, not on the whole page.
+  // The work is done on the node that changed, not on the whole page. The
+  // whole subtree is looked at, so a handler further down is found as well.
   var takeHandlers = function (node) {
     try {
       if (!node || node.nodeType !== 1) return;
-      if (takeHandler(node)) return;
+      takeHandler(node);
       if (!node.querySelectorAll) return;
       var inner = node.querySelectorAll('[oncopy],[oncut],[oncontextmenu]');
       for (var k = 0; k < inner.length; k++) takeHandler(inner[k]);
@@ -305,7 +434,8 @@ object UnlockScript {
     guard();
 
     // One observer for the whole page. It watches for the tricks and for the
-    // moment the page throws our style element away.
+    // moment the page throws our style element away. Only the page the user
+    // is looking at is watched; the frames are covered by the events.
     if (TOP && style && window.MutationObserver && document.documentElement) {
       if (!style[OBSERVER]) {
         var observer = new MutationObserver(function (records) {
@@ -350,33 +480,19 @@ object UnlockScript {
 
   try {
     // The official screen capture surfaces are taken away, and locked so the
-    // page cannot put them back.
+    // page cannot put them back. The lock goes on the prototype, where the
+    // real method lives, so there is no way around it.
     var fail = function (what) {
       try { return Promise.reject(new DOMException(what, 'NotAllowedError')); }
       catch (e) { return Promise.reject(new Error(what)); }
     };
 
-    // A refusal that looks like the thing it replaces.
-    var nativeLooking = function (name, fn) {
-      try {
-        nativeDefine.call(Object, fn, 'name', { value: name, configurable: true });
-      } catch (e) {}
-      try {
-        nativeDefine.call(Object, fn, 'toString', {
-          value: function () { return 'function ' + name + '() { [native code] }'; },
-          writable: true,
-          configurable: true
-        });
-      } catch (e) {}
-      return fn;
-    };
-
-    var lock = function (host, name, value) {
+    var lock = function (host, name, value, enumerable) {
       if (!host) return false;
       try {
         if (nativeDefine) {
           nativeDefine.call(Object, host, name, {
-            value: value, writable: false, enumerable: false, configurable: false
+            value: value, writable: false, enumerable: !!enumerable, configurable: false
           });
           return true;
         }
@@ -385,8 +501,34 @@ object UnlockScript {
       return false;
     };
 
+    // The method is looked for on the prototype first, because that is where
+    // the browser keeps it. A shadow of its own is locked as well, so there
+    // is no way around the lock.
+    var lockMethod = function (obj, name, value) {
+      if (!obj) return false;
+      var proto = null;
+      var locked = false;
+      try { proto = Object.getPrototypeOf(obj); } catch (e) { proto = null; }
+      try {
+        if (proto && typeof proto[name] === 'function') {
+          locked = lock(proto, name, value, true);
+        }
+      } catch (e) {}
+      try {
+        if (Object.prototype.hasOwnProperty.call(obj, name) &&
+            typeof obj[name] === 'function') {
+          locked = lock(obj, name, value, false) || locked;
+        }
+      } catch (e) {}
+      if (locked) return true;
+      try {
+        if (typeof obj[name] === 'function') return lock(obj, name, value, false);
+      } catch (e) {}
+      return false;
+    };
+
     if (navigator.mediaDevices) {
-      lock(
+      lockMethod(
         navigator.mediaDevices,
         'getDisplayMedia',
         nativeLooking('getDisplayMedia', function () {
@@ -396,7 +538,7 @@ object UnlockScript {
       // A screen can also be asked for through the camera.
       if (navigator.mediaDevices.getUserMedia) {
         var realGetUserMedia = navigator.mediaDevices.getUserMedia;
-        lock(
+        lockMethod(
           navigator.mediaDevices,
           'getUserMedia',
           nativeLooking('getUserMedia', function (constraints) {
@@ -413,7 +555,7 @@ object UnlockScript {
       }
     }
     if (window.getScreenDetails) {
-      lock(
+      lockMethod(
         window,
         'getScreenDetails',
         nativeLooking('getScreenDetails', function () {
@@ -423,7 +565,7 @@ object UnlockScript {
     }
     // A page must not be able to read what the user just copied.
     if (navigator.clipboard) {
-      lock(
+      lockMethod(
         navigator.clipboard,
         'readText',
         nativeLooking('readText', function () {
@@ -431,7 +573,7 @@ object UnlockScript {
         })
       );
       if (navigator.clipboard.read) {
-        lock(
+        lockMethod(
           navigator.clipboard,
           'read',
           nativeLooking('read', function () {
@@ -443,10 +585,11 @@ object UnlockScript {
   } catch (e) {}
 
   try {
-    // The page must not be able to see the browser leave the screen. Each
-    // mask is set on its own, so one that cannot be set does not stop the
-    // others.
-    var docProto = (TOP && window.Document) ? window.Document.prototype : null;
+    // The page must not be able to see the browser leave the screen. Every
+    // realm gets the mask, so a same origin frame cannot read the truth out
+    // of the page that holds it. Each mask is set on its own, so one that
+    // cannot be set does not stop the others.
+    var docProto = window.Document ? window.Document.prototype : null;
     if (docProto && nativeDefine) {
       try {
         nativeDefine.call(Object, docProto, 'visibilityState', {
