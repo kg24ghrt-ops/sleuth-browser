@@ -19,50 +19,36 @@ import java.util.UUID
  * A page that fights back is handled as well. The originals of the tools the
  * guard needs are kept before the page can change them, the capture surfaces
  * are locked on the prototype where they really live, the unlock rule is put
- * at the very end of the document so a page rule of the same weight cannot
- * win, and the style element is rebuilt if the page throws it away.
+ * where it cannot be outranked, and the style element is rebuilt if the page
+ * throws it away.
  *
- * The guard stays out of the way of the page as much as it can. It only looks
- * at the parts of the page that changed, the first sweep waits for a quiet
- * moment, and a page that keeps throwing the style element away is left to
- * do it rather than being fought over and over again.
+ * The guard tries hard not to be seen. Its rule is put in an adopted style
+ * sheet, so it does not show up among the page's own style sheets; its notes
+ * are kept under symbols, so nothing readable is left on anything; and every
+ * thing it touches keeps the shape the browser gave it, so a page that looks
+ * for a patched browser finds nothing out of the ordinary.
  *
- * Nothing is left in the page that gives the game away: the marker lives on a
- * javascript property of the injected style element instead of an id, a data
- * attribute or a global name, it has no fixed name to look for, and it is
- * different on every run.
+ * The guard also stays out of the way of the page as much as it can. It only
+ * looks at the parts of the page that changed, the first sweep waits for a
+ * quiet moment, and a page that keeps throwing the style element away is
+ * left to do it rather than being fought over and over again.
  */
 object UnlockScript {
 
     /** A name that does not give the game away, and is different on every run. */
     private val token: String = UUID.randomUUID().toString().replace("-", "").substring(0, 12)
 
-    /** The mark that lets the browser find its own style element again. */
-    private val marker: String = "__" + token
-
-    /** Where the tricks the guard caught are written down. */
-    private const val CODES_SUFFIX = "c"
-
-    /** Where the observer is kept, so only one is ever watching. */
-    private const val OBSERVER_SUFFIX = "o"
-
-    /** Where the event stopper is kept, so it is only ever registered once. */
-    private const val STOP_SUFFIX = "s"
-
-    /** Where the native listener is kept, so the guard never builds on itself. */
-    private const val ADD_SUFFIX = "a"
-
-    /** Where the native preventDefault is kept. */
-    private const val PREVENT_SUFFIX = "v"
-
-    /** Where the native toString is kept. */
-    private const val TOSTRING_SUFFIX = "t"
-
-    /** Where the list of dressed up functions is kept. */
-    private const val WRAPPED_SUFFIX = "w"
-
-    /** Where the dressed up toString is kept. */
-    private const val SPOOF_SUFFIX = "f"
+    /** The keys the guard keeps its notes under. Symbols, so nothing is readable. */
+    private const val MARK_KEY = "m"
+    private const val CODES_KEY = "c"
+    private const val OBSERVER_KEY = "o"
+    private const val STOP_KEY = "s"
+    private const val ADD_KEY = "a"
+    private const val PREVENT_KEY = "v"
+    private const val TOSTRING_KEY = "t"
+    private const val WRAPPED_KEY = "w"
+    private const val SPOOF_KEY = "f"
+    private const val TEXT_KEY = "x"
 
     /** How many times the style element may be thrown away before the guard gives up. */
     private const val MAX_REBUILDS = 25
@@ -119,20 +105,25 @@ object UnlockScript {
 
     private var cached: Cached? = null
 
+    private fun symbol(suffix: String): String = "__${token}__$suffix"
+
     private fun buildScript(bypassed: Set<String>, light: Boolean): String {
         val events = hiddenEvents.joinToString(",") { "'$it'" }
         val hosts = bypassed.sorted().joinToString(",") { "'${it.replace("'", "")}'" }
         return """
 (function(){
-  var MARK = '$marker';
-  var CODES = MARK + '$CODES_SUFFIX';
-  var OBSERVER = MARK + '$OBSERVER_SUFFIX';
-  var STOP = MARK + '$STOP_SUFFIX';
-  var ADD = MARK + '$ADD_SUFFIX';
-  var PREVENT = MARK + '$PREVENT_SUFFIX';
-  var TOSTRING = MARK + '$TOSTRING_SUFFIX';
-  var WRAPPED = MARK + '$WRAPPED_SUFFIX';
-  var SPOOF = MARK + '$SPOOF_SUFFIX';
+  // Everything the guard keeps its notes under is a symbol with a name that
+  // is different on every run, so there is nothing to read off the page.
+  var MARK = Symbol.for('${symbol(MARK_KEY)}');
+  var CODES = Symbol.for('${symbol(CODES_KEY)}');
+  var OBSERVER = Symbol.for('${symbol(OBSERVER_KEY)}');
+  var STOP = Symbol.for('${symbol(STOP_KEY)}');
+  var ADD = Symbol.for('${symbol(ADD_KEY)}');
+  var PREVENT = Symbol.for('${symbol(PREVENT_KEY)}');
+  var TOSTRING = Symbol.for('${symbol(TOSTRING_KEY)}');
+  var WRAPPED = Symbol.for('${symbol(WRAPPED_KEY)}');
+  var SPOOF = Symbol.for('${symbol(SPOOF_KEY)}');
+  var TEXT = Symbol.for('${symbol(TEXT_KEY)}');
   var LIGHT = $light;
   var BYPASS = [$hosts];
 
@@ -162,75 +153,125 @@ object UnlockScript {
   try { nativeDefine = Object.defineProperty; } catch (e) {}
 
   // The rule is heavy on purpose, so a page rule of the same weight cannot
-  // outrank it, and it goes in last, so a tie is won here as well.
+  // outrank it.
   var css = 'html,html body,html body *,:root body *,:root:root body *{-webkit-user-select:text !important;' +
             'user-select:text !important;-webkit-touch-callout:default !important;}';
 
-  var style = null;
+  var state = null;
+  var sheet = null;
+  var element = null;
   var rebuilds = 0;
   var wrapped = [];
 
-  var findStyle = function () {
-    // our own element is preferred, a copy made by the page is not
+  // The state is the adopted style sheet when the browser has them, and a
+  // style element when it has not. Both carry the notes under symbols.
+  var findState = function () {
     try {
-      if (style && style[MARK] && style.parentNode) return style;
+      // the sheet only counts while the page still has it
+      if (sheet && sheet[MARK] && document.adoptedStyleSheets.indexOf(sheet) !== -1) {
+        return sheet;
+      }
     } catch (e) {}
-    var list = document.getElementsByTagName('style');
-    for (var i = 0; i < list.length; i++) { if (list[i][MARK]) return list[i]; }
+    try {
+      var list = document.adoptedStyleSheets;
+      for (var i = 0; list && i < list.length; i++) {
+        if (list[i] && list[i][MARK]) { sheet = list[i]; return sheet; }
+      }
+    } catch (e) {}
+    try {
+      var styles = document.getElementsByTagName('style');
+      for (var j = 0; j < styles.length; j++) {
+        if (styles[j][MARK]) { element = styles[j]; return styles[j]; }
+      }
+    } catch (e) {}
     return null;
   };
 
   var record = function (code) {
     try {
-      if (!style) return;
-      var current = style[CODES] || '';
+      if (!state) return;
+      var current = state[CODES] || '';
       var parts = String(current).split(',');
       for (var i = 0; i < parts.length; i++) {
         if (parts[i] === code) return;
       }
-      style[CODES] = current ? current + ',' + code : code;
+      state[CODES] = current ? current + ',' + code : code;
     } catch (e) {}
   };
 
-  // Our rule goes to the very end of the document, so every rule the page
-  // wrote comes before it and cannot win a tie.
-  var place = function () {
-    try {
-      var parent = document.documentElement;
-      if (!parent) return;
-      if (parent.lastChild === style) return;
-      parent.appendChild(style);
-    } catch (e) {}
-  };
-
-  // Finds the style element, or builds a new one when the page threw it away.
-  var ensure = function () {
-    var found = findStyle();
-    if (!found) {
-      var old = style;
+  // The rule goes into an adopted style sheet, so it does not show up among
+  // the page's own style sheets. A style element is only used when the
+  // browser has no adopted sheets, and it goes to the very end of the
+  // document, so every rule the page wrote comes before it.
+  var build = function () {
+    var old = state;
+    var made = null;
       try {
-        found = document.createElement('style');
-        found.type = 'text/css';
-        found[MARK] = true;
-        if (old) {
-          // everything the guard kept moves across to the new element
-          try { if (old[CODES]) found[CODES] = old[CODES]; } catch (e) {}
-          try { if (old[OBSERVER]) found[OBSERVER] = old[OBSERVER]; } catch (e) {}
-          try { if (old[STOP]) found[STOP] = old[STOP]; } catch (e) {}
-          try { if (old[ADD]) found[ADD] = old[ADD]; } catch (e) {}
-          try { if (old[PREVENT]) found[PREVENT] = old[PREVENT]; } catch (e) {}
-          try { if (old[TOSTRING]) found[TOSTRING] = old[TOSTRING]; } catch (e) {}
-          try { if (old[WRAPPED]) found[WRAPPED] = old[WRAPPED]; } catch (e) {}
-          try { if (old[SPOOF]) found[SPOOF] = old[SPOOF]; } catch (e) {}
+        if (window.CSSStyleSheet && document.adoptedStyleSheets) {
+          var fresh = new CSSStyleSheet();
+          fresh[MARK] = true;
+          fresh.replaceSync(css);
+          var list = document.adoptedStyleSheets;
+          var next = [];
+          for (var i = 0; list && i < list.length; i++) {
+            // an older sheet of ours goes, so there is only ever one
+            if (list[i] && list[i][MARK]) continue;
+            next.push(list[i]);
+          }
+          next.push(fresh);
+          document.adoptedStyleSheets = next;
+          sheet = fresh;
+          made = fresh;
         }
-        (document.head || document.documentElement).appendChild(found);
-      } catch (e) { found = null; }
+      } catch (e) { made = null; }
+    if (!made) {
+      try {
+        var el = document.createElement('style');
+        el.type = 'text/css';
+        el[MARK] = true;
+        el.textContent = css;
+        (document.head || document.documentElement).appendChild(el);
+        element = el;
+        made = el;
+      } catch (e) { made = null; }
     }
-    if (!found) return null;
-    style = found;
-    try { if (style.textContent !== css) style.textContent = css; } catch (e) {}
-    place();
-    return style;
+    if (!made) return null;
+    if (old) {
+      // everything the guard kept moves across to the new state
+      try { if (old[CODES]) made[CODES] = old[CODES]; } catch (e) {}
+      try { if (old[OBSERVER]) made[OBSERVER] = old[OBSERVER]; } catch (e) {}
+      try { if (old[STOP]) made[STOP] = old[STOP]; } catch (e) {}
+      try { if (old[ADD]) made[ADD] = old[ADD]; } catch (e) {}
+      try { if (old[PREVENT]) made[PREVENT] = old[PREVENT]; } catch (e) {}
+      try { if (old[TOSTRING]) made[TOSTRING] = old[TOSTRING]; } catch (e) {}
+      try { if (old[WRAPPED]) made[WRAPPED] = old[WRAPPED]; } catch (e) {}
+      try { if (old[SPOOF]) made[SPOOF] = old[SPOOF]; } catch (e) {}
+    }
+    state = made;
+    return made;
+  };
+
+  // Finds the state, or builds a new one when the page threw it away.
+  var ensure = function () {
+    var found = findState();
+    if (!found) {
+      found = build();
+      if (!found) return null;
+    }
+    state = found;
+    try {
+      if (state[TEXT] !== css) {
+        state[TEXT] = css;
+        if (sheet) {
+          sheet.replaceSync(css);
+        } else if (element) {
+          if (element.textContent !== css) element.textContent = css;
+          var parent = document.documentElement;
+          if (parent && parent.lastChild !== element) parent.appendChild(element);
+        }
+      }
+    } catch (e) {}
+    return state;
   };
 
   ensure();
@@ -240,20 +281,20 @@ object UnlockScript {
   var nativePrevent = null;
   var nativeToString = null;
   try {
-    nativeAdd = (style && style[ADD]) ? style[ADD] : EventTarget.prototype.addEventListener;
+    nativeAdd = (state && state[ADD]) ? state[ADD] : EventTarget.prototype.addEventListener;
   } catch (e) {}
   try {
-    nativePrevent = (style && style[PREVENT]) ? style[PREVENT] : Event.prototype.preventDefault;
+    nativePrevent = (state && state[PREVENT]) ? state[PREVENT] : Event.prototype.preventDefault;
   } catch (e) {}
   try {
-    nativeToString = (style && style[TOSTRING]) ? style[TOSTRING] : Function.prototype.toString;
+    nativeToString = (state && state[TOSTRING]) ? state[TOSTRING] : Function.prototype.toString;
   } catch (e) {}
-  if (style) {
-    style[ADD] = nativeAdd;
-    style[PREVENT] = nativePrevent;
-    style[TOSTRING] = nativeToString;
-    try { if (style[WRAPPED]) wrapped = style[WRAPPED]; } catch (e) {}
-    style[WRAPPED] = wrapped;
+  if (state) {
+    state[ADD] = nativeAdd;
+    state[PREVENT] = nativePrevent;
+    state[TOSTRING] = nativeToString;
+    try { if (state[WRAPPED]) wrapped = state[WRAPPED]; } catch (e) {}
+    state[WRAPPED] = wrapped;
   }
 
   // The events the page must never hear about, and must never be able to
@@ -283,7 +324,7 @@ object UnlockScript {
     // Function.prototype.toString reads the real source of a function, so the
     // careful way of reading it is dressed up as well.
     var spoof = null;
-    try { spoof = style ? style[SPOOF] : null; } catch (e) {}
+    try { spoof = state ? state[SPOOF] : null; } catch (e) {}
     if (!spoof && nativeDefine && nativeToString) {
       spoof = function () {
         try {
@@ -303,7 +344,7 @@ object UnlockScript {
       });
       wrapped.push(spoof);
     }
-    if (style && spoof) style[SPOOF] = spoof;
+    if (state && spoof) state[SPOOF] = spoof;
   } catch (e) {}
 
   try {
@@ -316,6 +357,7 @@ object UnlockScript {
         } catch (e) {}
         return nativeAdd.call(this, type, listener, options);
       };
+      nativeDefine.call(Object, patchedAdd, 'name', { value: 'addEventListener', configurable: true });
       nativeDefine.call(Object, EventTarget.prototype, 'addEventListener', {
         value: patchedAdd, writable: true, enumerable: true, configurable: true
       });
@@ -324,14 +366,17 @@ object UnlockScript {
   } catch (e) {}
 
   try {
-    // And a handler that is already there cannot cancel the copy either.
+    // And a handler that is already there cannot cancel the copy either. Only
+    // a real event is stopped, so a page that pokes at the event with one of
+    // its own sees nothing out of the ordinary.
     if (nativePrevent && nativeDefine) {
       var patchedPrevent = function () {
         try {
-          if (guarded[String(this.type).toLowerCase()]) return;
+          if (guarded[String(this.type).toLowerCase()] && this.isTrusted) return;
         } catch (e) {}
         return nativePrevent.call(this);
       };
+      nativeDefine.call(Object, patchedPrevent, 'name', { value: 'preventDefault', configurable: true });
       nativeDefine.call(Object, Event.prototype, 'preventDefault', {
         value: patchedPrevent, writable: true, enumerable: true, configurable: true
       });
@@ -350,8 +395,8 @@ object UnlockScript {
     try {
       // The same stopper is used every time, so a page that is asked twice
       // does not end up with a pile of listeners.
-      var fn = (style && style[STOP]) ? style[STOP] : stop;
-      if (style) style[STOP] = fn;
+      var fn = (state && state[STOP]) ? state[STOP] : stop;
+      if (state) state[STOP] = fn;
       // The capture phase always starts at the window, so one place is
       // enough, and every frame gets the same cover. The original is used,
       // because the guard has taught the page not to register these events.
@@ -425,11 +470,17 @@ object UnlockScript {
     setTimeout(work, 200);
   };
 
-  // The page threw the style element away, so it is built again. A page that
-  // keeps throwing it away is left to it, after a while.
+  // The page threw the rule away, so it is built again. A page that keeps
+  // throwing it away is left to it, after a while.
   var lost = function () {
     var still = false;
-    try { still = document.documentElement.contains(style); } catch (e) { still = false; }
+    try {
+      if (sheet) {
+        still = (document.adoptedStyleSheets.indexOf(sheet) !== -1);
+      } else if (state) {
+        still = document.documentElement.contains(state);
+      }
+    } catch (e) { still = false; }
     if (still) return;
     rebuilds++;
     if (rebuilds > $MAX_REBUILDS) return;
@@ -441,15 +492,17 @@ object UnlockScript {
     guard();
 
     // One observer for the whole page. It watches for the tricks and for the
-    // moment the page throws our style element away. Only the page the user
-    // is looking at is watched; the frames are covered by the events.
-    if (TOP && style && window.MutationObserver && document.documentElement) {
-      if (!style[OBSERVER]) {
+    // moment the page throws the rule away. Only the page the user is
+    // looking at is watched; the frames are covered by the events.
+    if (TOP && state && window.MutationObserver && document.documentElement) {
+      if (!state[OBSERVER]) {
         var observer = new MutationObserver(function (records) {
           try {
+            // the page may have dropped the rule without touching the page
+            if (sheet && document.adoptedStyleSheets.indexOf(sheet) === -1) lost();
             for (var i = 0; i < records.length; i++) {
               var entry = records[i];
-              if (entry.target === style) continue;
+              if (entry.target === state) continue;
               if (entry.type === 'childList') {
                 if (entry.addedNodes) {
                   for (var a = 0; a < entry.addedNodes.length; a++) {
@@ -458,7 +511,7 @@ object UnlockScript {
                 }
                 if (entry.removedNodes) {
                   for (var d = 0; d < entry.removedNodes.length; d++) {
-                    if (entry.removedNodes[d] === style) lost();
+                    if (entry.removedNodes[d] === state) lost();
                   }
                 }
                 continue;
@@ -477,7 +530,7 @@ object UnlockScript {
           attributes: true,
           attributeFilter: ['oncopy','oncut','oncontextmenu','style']
         });
-        style[OBSERVER] = observer;
+        state[OBSERVER] = observer;
       }
     }
 
@@ -494,12 +547,15 @@ object UnlockScript {
       catch (e) { return Promise.reject(new Error(what)); }
     };
 
-    var lock = function (host, name, value, enumerable) {
+    // The shape the browser gave the method is kept, so a page that looks at
+    // the shape finds nothing out of the ordinary. The original stays in the
+    // guard, so a page cannot get it back by writing its own.
+    var lock = function (host, name, value) {
       if (!host) return false;
       try {
         if (nativeDefine) {
           nativeDefine.call(Object, host, name, {
-            value: value, writable: false, enumerable: !!enumerable, configurable: false
+            value: value, writable: true, enumerable: true, configurable: true
           });
           return true;
         }
@@ -518,18 +574,18 @@ object UnlockScript {
       try { proto = Object.getPrototypeOf(obj); } catch (e) { proto = null; }
       try {
         if (proto && typeof proto[name] === 'function') {
-          locked = lock(proto, name, value, true);
+          locked = lock(proto, name, value);
         }
       } catch (e) {}
       try {
         if (Object.prototype.hasOwnProperty.call(obj, name) &&
             typeof obj[name] === 'function') {
-          locked = lock(obj, name, value, false) || locked;
+          locked = lock(obj, name, value) || locked;
         }
       } catch (e) {}
       if (locked) return true;
       try {
-        if (typeof obj[name] === 'function') return lock(obj, name, value, false);
+        if (typeof obj[name] === 'function') return lock(obj, name, value);
       } catch (e) {}
       return false;
     };
@@ -594,23 +650,27 @@ object UnlockScript {
   try {
     // The page must not be able to see the browser leave the screen. Every
     // realm gets the mask, so a same origin frame cannot read the truth out
-    // of the page that holds it. Each mask is set on its own, so one that
-    // cannot be set does not stop the others.
+    // of the page that holds it. The shape the browser gave the property is
+    // kept, and the truth is out of reach anyway, because the mask is in
+    // every realm there is.
     var docProto = window.Document ? window.Document.prototype : null;
     if (docProto && nativeDefine) {
       try {
+        var visible = nativeLooking('get visibilityState', function () { return 'visible'; });
         nativeDefine.call(Object, docProto, 'visibilityState', {
-          get: function () { return 'visible'; }, configurable: false
+          get: visible, set: undefined, enumerable: true, configurable: true
         });
       } catch (e) {}
       try {
+        var hidden = nativeLooking('get hidden', function () { return false; });
         nativeDefine.call(Object, docProto, 'hidden', {
-          get: function () { return false; }, configurable: false
+          get: hidden, set: undefined, enumerable: true, configurable: true
         });
       } catch (e) {}
       try {
+        var focus = nativeLooking('hasFocus', function () { return true; });
         nativeDefine.call(Object, docProto, 'hasFocus', {
-          value: function () { return true; }, writable: true, configurable: false
+          value: focus, writable: true, enumerable: true, configurable: true
         });
       } catch (e) {}
     }
@@ -623,13 +683,21 @@ object UnlockScript {
         return """
 (function(){
   var found = [];
-  var MARK = '$marker';
-  var CODES = MARK + '$CODES_SUFFIX';
+  var MARK = Symbol.for('${symbol(MARK_KEY)}');
+  var CODES = Symbol.for('${symbol(CODES_KEY)}');
+  var states = [];
+  try {
+    var list = document.adoptedStyleSheets;
+    for (var i = 0; list && i < list.length; i++) { if (list[i]) states.push(list[i]); }
+  } catch (e) {}
+  try {
+    var styles = document.getElementsByTagName('style');
+    for (var j = 0; j < styles.length; j++) { states.push(styles[j]); }
+  } catch (e) {}
   try {
     // The tricks the guard caught while the page was running.
-    var list = document.getElementsByTagName('style');
-    for (var i = 0; i < list.length; i++) {
-      var recorded = list[i][CODES];
+    for (var s = 0; s < states.length; s++) {
+      var recorded = states[s][CODES];
       if (!recorded) continue;
       var parts = String(recorded).split(',');
       for (var p = 0; p < parts.length; p++) {

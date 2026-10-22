@@ -97,6 +97,15 @@ stands down the shield next to the address bar shows it, and a tap puts the guar
 A page that logs `visibilitychange`, focus and clipboard events can tell when a browser took a
 picture or copied something. Sleuth takes those pages blind.
 
+- **The guard tries not to be seen either.** Its rule is put in an adopted style sheet, so it does
+  not show up among the page's own style sheets and leaves nothing in the page itself; its notes are
+  kept under symbols with a name that is different on every run, so there is nothing readable to
+  find on any object; and everything it touches — the methods it takes away, the event listener, the
+  `preventDefault`, the `toString`, the visibility and focus masks — keeps the shape the browser gave
+  it, so a page that looks for a patched browser finds nothing out of the ordinary. Even the careful
+  way of reading a function, `Function.prototype.toString.call(fn)`, sees the browser's own code.
+- **Only a real event is stopped.** A page that pokes at the events with ones of its own making gets
+  the ordinary behaviour back, so it cannot use that to find out whether the guard is there.
 - `visibilitychange`, `focus`, `blur`, `pagehide`, `pageshow`, `freeze`, `resume`, `beforeunload`
   and `unload` are stopped in the capture phase, so the page never hears that the app came to the
   front, went to the back, opened the evidence lab or took a picture.
@@ -116,9 +125,9 @@ picture or copied something. Sleuth takes those pages blind.
 - **A page full of frames does not pay for the whole guard in every frame.** The watcher that hunts
   for tricks stays in the page the user is actually looking at; every frame is still covered by the
   events and by the masks.
-- **The injected script leaves nothing obvious behind:** the marker is a javascript property on the
-  style element, not an id, a data attribute or a global name, it has no fixed name to look for,
-  and it is different on every run.
+- **The injected script leaves nothing obvious behind:** the rule sits in an adopted style sheet
+  rather than in the page, the notes live under symbols with a name that has no fixed form, the
+  marker is not an id, a data attribute or a global name, and it is different on every run.
 
 The one trade off: a page that copies to the clipboard itself, with `execCommand('copy')`, loses
 that ability — the browser cannot tell the difference between the page copying and the user

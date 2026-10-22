@@ -111,6 +111,30 @@ class UnlockScriptTest {
     }
 
     @Test
+    fun `the rule goes into an adopted style sheet`() {
+        assertTrue(UnlockScript.UNLOCK.contains("adoptedStyleSheets"))
+        assertTrue(UnlockScript.UNLOCK.contains("new CSSStyleSheet"))
+    }
+
+    @Test
+    fun `the notes are kept under symbols`() {
+        assertTrue(UnlockScript.UNLOCK.contains("Symbol.for"))
+        assertTrue(UnlockScript.PROBE.contains("Symbol.for"))
+    }
+
+    @Test
+    fun `everything the guard touches keeps the shape the browser gave it`() {
+        assertTrue(UnlockScript.UNLOCK.contains("writable: true"))
+        assertTrue(UnlockScript.UNLOCK.contains("enumerable: true"))
+        assertTrue(UnlockScript.UNLOCK.contains("configurable: true"))
+    }
+
+    @Test
+    fun `only a real event is stopped`() {
+        assertTrue(UnlockScript.UNLOCK.contains("isTrusted"))
+    }
+
+    @Test
     fun `the same script is not built twice`() {
         val first = UnlockScript.forBypassed(setOf("example.com"))
         val second = UnlockScript.forBypassed(setOf("example.com"))
