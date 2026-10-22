@@ -93,14 +93,21 @@ object UnlockScript {
     val REASSERT: String = buildScript(emptySet(), light = true)
 
     /**
+     * Reports what the page is doing to protect itself. The answer is a short
+     * list of codes, one per trick. The tricks the guard caught are read back
+     * from the page, and the rest is looked for in the page's own stylesheets.
+     */
+    val PROBE: String = buildProbe()
+
+    /**
      * The script for a set of sites that are allowed to protect themselves.
      * The sites are written into the script, so the guard stands down on its
      * own the moment it lands on one of them.
      */
     fun forBypassed(bypassed: Set<String>, light: Boolean = false): String {
-        val cached = cached
-        if (cached != null && cached.light == light && cached.hosts == bypassed) {
-            return cached.script
+        val last = cached
+        if (last != null && last.light == light && last.hosts == bypassed) {
+            return last.script
         }
         val script = buildScript(bypassed, light)
         cached = Cached(bypassed, light, script)
