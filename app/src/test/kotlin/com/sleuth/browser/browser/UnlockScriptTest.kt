@@ -221,4 +221,32 @@ class UnlockScriptTest {
         assertTrue(UnlockScript.PROBE.contains("print"))
         assertTrue(UnlockScript.PROBE.contains("user-select"))
     }
+
+    @Test
+    fun `the page cannot see it is being driven`() {
+        assertTrue(UnlockScript.UNLOCK.contains("webdriver"))
+        assertTrue(UnlockScript.UNLOCK.contains("get webdriver"))
+    }
+
+    @Test
+    fun `a page that looks for chrome finds a realistic object`() {
+        assertTrue(UnlockScript.UNLOCK.contains("window.chrome"))
+        assertTrue(UnlockScript.UNLOCK.contains("chrome.app"))
+        assertTrue(UnlockScript.UNLOCK.contains("chrome.runtime"))
+    }
+
+    @Test
+    fun `the permissions API does not reveal automation`() {
+        assertTrue(UnlockScript.UNLOCK.contains("navigator.permissions"))
+        assertTrue(UnlockScript.UNLOCK.contains("automation"))
+        assertTrue(UnlockScript.UNLOCK.contains("state: 'prompt'"))
+    }
+
+    @Test
+    fun `headless giveaways like empty plugins are masked`() {
+        assertTrue(UnlockScript.UNLOCK.contains("navigator.plugins"))
+        assertTrue(UnlockScript.UNLOCK.contains("Chrome PDF Plugin"))
+        assertTrue(UnlockScript.UNLOCK.contains("navigator.mimeTypes"))
+        assertTrue(UnlockScript.UNLOCK.contains("application/pdf"))
+    }
 }

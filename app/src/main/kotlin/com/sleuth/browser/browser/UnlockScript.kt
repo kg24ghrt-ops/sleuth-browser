@@ -538,19 +538,90 @@ object UnlockScript {
     if (!LIGHT && TOP) idle(sweep);
   } catch (e) {}
 
-  try {
-    // The official screen capture surfaces are taken away, and locked so the
-    // page cannot put them back. The lock goes on the prototype, where the
-    // real method lives, so there is no way around it.
-    var fail = function (what) {
-      try { return Promise.reject(new DOMException(what, 'NotAllowedError')); }
-      catch (e) { return Promise.reject(new Error(what)); }
-    };
+try {
+      // The page must not know it is being driven. The webdriver flag is the
+      // first thing a detection script checks, so it goes away first.
+      if (nativeDefine) {
+        try {
+          nativeDefine.call(Object, navigator, 'webdriver', {
+            get: nativeLooking('get webdriver', function () { return false; }),
+            set: undefined, enumerable: true, configurable: true
+          });
+        } catch (e) {}
+      }
 
-    // The shape the browser gave the method is kept, so a page that looks at
-    // the shape finds nothing out of the ordinary. The original stays in the
-    // guard, so a page cannot get it back by writing its own.
-    var lock = function (host, name, value) {
+      // A page that looks for window.chrome finds a realistic object. The
+      // real browser keeps chrome.app, chrome.runtime, and chrome.webstore.
+      if (nativeDefine && !window.chrome) {
+        try {
+          var chrome = { app: {}, runtime: {}, webstore: {} };
+          nativeDefine.call(Object, window, 'chrome', {
+            value: chrome, writable: true, enumerable: true, configurable: true
+          });
+        } catch (e) {}
+      }
+
+      // The permissions API can reveal automation. The guard makes the query
+      // look like the page has not asked, and hides the 'automation' state.
+      if (navigator.permissions && nativeDefine) {
+        try {
+          var realQuery = navigator.permissions.query;
+          var patchedQuery = nativeLooking('query', function (permission) {
+            try {
+              if (permission && permission.name === 'automation') {
+                return Promise.resolve({ state: 'prompt', onchange: null });
+              }
+            } catch (e) {}
+            return realQuery.call(navigator.permissions, permission);
+          });
+          nativeDefine.call(Object, navigator.permissions, 'query', {
+            value: patchedQuery, writable: true, enumerable: true, configurable: true
+          });
+          wrapped.push(patchedQuery);
+        } catch (e) {}
+      }
+
+      // Headless browsers often have empty plugins and mimeTypes. A real
+      // browser has at least a few entries. The guard seeds them with
+      // plausible defaults when they are missing.
+      if (nativeDefine) {
+        try {
+          if (!navigator.plugins || navigator.plugins.length === 0) {
+            var fakePlugins = [
+              { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+              { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+              { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
+            ];
+            nativeDefine.call(Object, navigator, 'plugins', {
+              value: fakePlugins, writable: true, enumerable: true, configurable: true
+            });
+          }
+        } catch (e) {}
+        try {
+          if (!navigator.mimeTypes || navigator.mimeTypes.length === 0) {
+            var fakeMimes = [
+              { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format' },
+              { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: 'Portable Document Format' }
+            ];
+            nativeDefine.call(Object, navigator, 'mimeTypes', {
+              value: fakeMimes, writable: true, enumerable: true, configurable: true
+            });
+          }
+        } catch (e) {}
+      }
+
+      // The official screen capture surfaces are taken away, and locked so the
+      // page cannot put them back. The lock goes on the prototype, where the
+      // real method lives, so there is no way around it.
+      var fail = function (what) {
+        try { return Promise.reject(new DOMException(what, 'NotAllowedError')); }
+        catch (e) { return Promise.reject(new Error(what)); }
+      };
+
+      // The shape the browser gave the method is kept, so a page that looks at
+      // the shape finds nothing out of the ordinary. The original stays in the
+      // guard, so a page cannot get it back by writing its own.
+      var lock = function (host, name, value) {
       if (!host) return false;
       try {
         if (nativeDefine) {
