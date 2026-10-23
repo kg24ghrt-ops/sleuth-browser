@@ -3,11 +3,6 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-repositories {
-    mavenCentral()
-    maven("https://maven.mozilla.org/maven2/")
-}
-
 android {
     namespace = "com.sleuth.browser"
     compileSdk = 36
