@@ -4,13 +4,10 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
-import android.webkit.WebView
+import org.mozilla.geckoview.GeckoRuntime
+import org.mozilla.geckoview.GeckoRuntimeSettings
+import org.mozilla.geckoview.GeckoView
 
-/**
- * Spinning up the browser engine costs a few hundred milliseconds. Doing it
- * while the app is still opening means the first page is asked for on an
- * engine that is already running.
- */
 object WebViewPreloader {
 
     private var warmed = false
@@ -19,18 +16,19 @@ object WebViewPreloader {
         if (warmed) return
         warmed = true
         try {
-            val webView = WebView(context.applicationContext)
-            webView.layout(0, 0, 1, 1)
+            val settings = GeckoRuntimeSettings.Builder()
+                .applicationContext(context)
+                .build()
+            val runtime = GeckoRuntime.create(settings)
+            val geckoView = GeckoView(context)
+            geckoView.setSession(null)
             Handler(Looper.getMainLooper()).postDelayed({
                 try {
-                    (webView.parent as? ViewGroup)?.removeView(webView)
-                    webView.destroy()
+                    (geckoView.parent as? ViewGroup)?.removeView(geckoView)
                 } catch (error: Throwable) {
-                    // the throwaway view is only there to start the engine
                 }
             }, 5000L)
         } catch (error: Throwable) {
-            // devices without a WebView provider simply skip the warm up
         }
     }
 }

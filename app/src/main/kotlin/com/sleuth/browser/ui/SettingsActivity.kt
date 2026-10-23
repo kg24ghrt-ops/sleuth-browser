@@ -2,7 +2,6 @@ package com.sleuth.browser.ui
 
 import android.os.Bundle
 import android.view.View
-import android.webkit.WebStorage
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
@@ -11,6 +10,8 @@ import com.sleuth.browser.Sleuth
 import com.sleuth.browser.SleuthIO
 import com.sleuth.browser.databinding.ActivitySettingsBinding
 import java.io.File
+import org.mozilla.geckoview.CookieManager
+import org.mozilla.geckoview.GeckoRuntime
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -62,7 +63,9 @@ class SettingsActivity : AppCompatActivity() {
                 SleuthIO.execute {
                     try {
                         context?.cacheDir?.listFiles()?.forEach { it.deleteRecursively() }
-                        WebStorage.getInstance().deleteAllData()
+                        CookieManager.getInstance().removeAllCookies(null)
+                        val runtime = GeckoViewFactory.getRuntime()
+                        runtime?.clearCache()
                     } catch (error: Throwable) {
                         // cache is best effort
                     }
@@ -77,7 +80,9 @@ class SettingsActivity : AppCompatActivity() {
                         context?.cacheDir?.listFiles()?.forEach { it.deleteRecursively() }
                         val evidenceRoot = File(context?.filesDir ?: File("/"), "evidence")
                         evidenceRoot.listFiles()?.forEach { it.deleteRecursively() }
-                        WebStorage.getInstance().deleteAllData()
+                        CookieManager.getInstance().removeAllCookies(null)
+                        val runtime = GeckoViewFactory.getRuntime()
+                        runtime?.clearCache()
                     } catch (error: Throwable) {
                         // best effort
                     }

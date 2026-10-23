@@ -19,8 +19,6 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebView
 import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -38,6 +36,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.sleuth.browser.browser.BrowserHost
 import com.sleuth.browser.browser.BrowserState
 import com.sleuth.browser.browser.BrowserTab
+import com.sleuth.browser.browser.GeckoViewFactory
 import com.sleuth.browser.browser.JsTools
 import com.sleuth.browser.browser.MediaSaver
 import com.sleuth.browser.browser.Omnibox
@@ -48,7 +47,6 @@ import com.sleuth.browser.browser.UnlockScript
 import com.sleuth.browser.browser.UrlDisplay
 import com.sleuth.browser.browser.UrlNormalizer
 import com.sleuth.browser.browser.VoiceInput
-import com.sleuth.browser.browser.WebViewFactory
 import com.sleuth.browser.data.CaseFile
 import com.sleuth.browser.data.EvidenceType
 import com.sleuth.browser.databinding.ActivityMainBinding
@@ -59,6 +57,8 @@ import com.sleuth.browser.ui.EvidenceLabActivity
 import com.sleuth.browser.ui.HistoryActivity
 import com.sleuth.browser.ui.SettingsActivity
 import java.io.File
+import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.GeckoSession
 
 class MainActivity : AppCompatActivity(), BrowserHost {
 
@@ -108,6 +108,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        GeckoViewFactory.init(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -127,15 +128,15 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                val webView = tabManager.current()?.webView
-                if (webView != null && webView.canGoBack()) {
-                    webView.goBack()
+                val session = tabManager.current()?.session
+                if (session != null && session.canGoBack()) {
+                    session.goBack()
                 } else if (tabManager.size > 1) {
                     tabManager.closeAt(tabManager.currentIndex)
                     val next = tabManager.current()
                     if (next != null) {
                         binding.webContainer.removeAllViews()
-                        binding.webContainer.addView(next.webView)
+                        binding.webContainer.addView(next.geckoView)
                         tabManager.select(tabManager.indexOf(next))
                         updateChrome()
                     } else {
@@ -164,7 +165,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
     override fun onResume() {
         super.onResume()
-        tabManager.current()?.webView?.onResume()
+        tabManager.current()?.session?.resume()
         val desktopMode = Sleuth.settings.desktopMode
         val modeChanged = desktopMode != lastDesktopMode
         lastDesktopMode = desktopMode
@@ -173,7 +174,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         tabManager.refreshGuards()
         if (modeChanged) {
             // the user agent only counts after a reload, and only the page in front needs it
-            tabManager.current()?.webView?.reload()
+            tabManager.current()?.session?.reload()
         }
         refreshArmedCase()
         updateChrome()
@@ -184,7 +185,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         if (!Sleuth.settings.pauseInBackground) return
         // pages stop running while the app is out of sight
         for (tab in tabManager.tabsSnapshot()) {
-            tab.webView.onPause()
+            tab.session.pause()
         }
     }
 
@@ -192,30 +193,35 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     private fun applyWebSettings() {
         val settings = Sleuth.settings
         val userAgent = if (settings.desktopMode) {
-            WebViewFactory.DESKTOP_UA
+            GeckoViewFactory.DESKTOP_UA
         } else {
-            WebViewFactory.MOBILE_UA
+            GeckoViewFactory.MOBILE_UA
         }
         for (tab in tabManager.tabsSnapshot()) {
-            val webSettings = tab.webView.settings
+            val sessionSettings = tab.session.settings
             // a setting is only written when it really changed, so the page is
             // never made to lay itself out again for nothing
-            if (webSettings.blockNetworkImage != settings.liteMode) {
-                webSettings.blockNetworkImage = settings.liteMode
+            if (sessionSettings.allowJavaScript != settings.javascript) {
+                sessionSettings.allowJavaScript = settings.javascript
             }
-            if (webSettings.textZoom != settings.fontScale) {
-                webSettings.textZoom = settings.fontScale
+            if (sessionSettings.textZoom != (settings.fontScale * 100).toInt()) {
+                sessionSettings.textZoom = (settings.fontScale * 100).toInt()
             }
-            if (webSettings.javaScriptEnabled != settings.javascript) {
-                webSettings.javaScriptEnabled = settings.javascript
+            if (sessionSettings.overrideUserAgent != userAgent) {
+                sessionSettings.overrideUserAgent = userAgent
             }
-            if (webSettings.userAgentString != userAgent) {
-                webSettings.userAgentString = userAgent
+            sessionSettings.userAgentMode = if (settings.desktopMode) {
+                org.mozilla.geckoview.GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
+            } else {
+                org.mozilla.geckoview.GeckoSessionSettings.USER_AGENT_MODE_MOBILE
             }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                if (webSettings.safeBrowsingEnabled != settings.safeBrowsing) {
-                    webSettings.safeBrowsingEnabled = settings.safeBrowsing
-                }
+            val contentBlocking = if (settings.blockTrackers) {
+                org.mozilla.geckoview.ContentBlocking.STRICT
+            } else {
+                org.mozilla.geckoview.ContentBlocking.NONE
+            }
+            if (sessionSettings.contentBlocking != contentBlocking) {
+                sessionSettings.contentBlocking = contentBlocking
             }
         }
     }
@@ -265,11 +271,11 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         // the shield is the switch for the page that is in front
         binding.protectionIcon.setOnClickListener { toggleSiteBypass() }
 
-        binding.btnBack.setOnClickListener { tabManager.current()?.webView?.goBack() }
-        binding.btnForward.setOnClickListener { tabManager.current()?.webView?.goForward() }
+        binding.btnBack.setOnClickListener { tabManager.current()?.session?.goBack() }
+        binding.btnForward.setOnClickListener { tabManager.current()?.session?.goForward() }
         binding.btnReload.setOnClickListener {
-            val webView = tabManager.current()?.webView
-            if (webView != null) webView.reload() else openInNewTab(Sleuth.settings.homeUrl)
+            val session = tabManager.current()?.session
+            if (session != null) session.reload() else openInNewTab(Sleuth.settings.homeUrl)
         }
         binding.btnHome.setOnClickListener { openInNewTab(Sleuth.settings.homeUrl) }
         binding.btnCapture.setOnClickListener { captureViewport() }
@@ -409,7 +415,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
                     lastDesktopMode = Sleuth.settings.desktopMode
                     applyWebSettings()
                     // only the page in front is reloaded, the other tabs stay as they are
-                    tabManager.current()?.webView?.reload()
+                    tabManager.current()?.session?.reload()
                     true
                 }
 
@@ -470,13 +476,13 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         }
         AlertDialog.Builder(this)
             .setTitle(R.string.app_name_full)
-            .setMessage("Sleuth $version\nAndroid WebView browser with captures and a local case system.\n\n" + getString(R.string.rules_body))
+            .setMessage("Sleuth $version\nFirefox (GeckoView) browser with captures and a local case system.\n\n" + getString(R.string.rules_body))
             .setPositiveButton(R.string.action_close, null)
             .show()
     }
 
     private fun showFindDialog() {
-        val webView = tabManager.current()?.webView ?: return
+        val session = tabManager.current()?.session ?: return
         val input = android.widget.EditText(this)
         input.hint = getString(R.string.search_hint)
         val padding = (16 * resources.displayMetrics.density).toInt()
@@ -488,7 +494,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
             .setPositiveButton(R.string.action_ok) { _, _ ->
                 val query = input.text?.toString()?.trim().orEmpty()
                 if (query.isBlank()) return@setPositiveButton
-                webView.evaluateJavascript(JsTools.findScript(query)) { raw ->
+                session.evaluateJavaScript(JsTools.findScript(query)) { raw ->
                     val result = JsTools.decodeString(raw)
                     if (result == "0") {
                         Toast.makeText(this, R.string.status_no_matches, Toast.LENGTH_SHORT).show()
@@ -555,10 +561,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
      */
     private fun applyProtectionChange(protectionsOn: Boolean, onMessage: Int, offMessage: Int) {
         tabManager.refreshGuards()
-        val webView = tabManager.current()?.webView
-        if (webView != null) {
-            webView.reload()
-        }
+        val session = tabManager.current()?.session
+        session?.reload()
         updateChrome()
         Toast.makeText(
             this,
@@ -572,7 +576,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         val on = !Sleuth.settings.liteMode
         Sleuth.settings.liteMode = on
         applyWebSettings()
-        tabManager.current()?.webView?.reload()
+        tabManager.current()?.session?.reload()
         updateChrome()
         Toast.makeText(
             this,
@@ -585,8 +589,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         val enabled = !Sleuth.settings.incognito
         Sleuth.settings.incognito = enabled
         try {
-            android.webkit.CookieManager.getInstance().removeAllCookies(null)
-            android.webkit.CookieManager.getInstance().flush()
+            org.mozilla.geckoview.CookieManager.getInstance().removeAllCookies(null)
         } catch (error: Throwable) {
             // cookies are best effort
         }
@@ -611,9 +614,9 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     private fun attachTab(index: Int) {
         val tab = tabManager.at(index) ?: return
         binding.webContainer.removeAllViews()
-        binding.webContainer.addView(tab.webView)
+        binding.webContainer.addView(tab.geckoView)
         // a tab that was sleeping in the background has to wake up again
-        tab.webView.onResume()
+        tab.session.resume()
         tabManager.select(index)
         updateChrome()
     }
@@ -679,10 +682,13 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     private fun captureViewport() {
         val container = binding.webContainer
         if (container.width <= 0 || container.height <= 0) return
-        val webView = tabManager.current()?.webView
-        if (webView != null && protectionsOn()) {
+        val session = tabManager.current()?.session
+        if (session != null && protectionsOn()) {
             // put the page back the way it should be before it is photographed
-            webView.evaluateJavascript(UnlockScript.forBypassed(Sleuth.settings.bypassedSites, light = true), null)
+            session.evaluateJavaScript(
+                UnlockScript.forBypassed(Sleuth.settings.bypassedSites, light = true),
+                GeckoSession.JavaScriptResult { _, _ -> }
+            )
             afterRepaint(container) { shoot(container) }
         } else {
             shoot(container)
@@ -730,15 +736,15 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun captureFullPage() {
-        val webView = tabManager.current()?.webView ?: return
+        val session = tabManager.current()?.session ?: return
         Toast.makeText(this, R.string.status_capturing, Toast.LENGTH_SHORT).show()
         if (protectionsOn()) {
-            webView.evaluateJavascript(
+            session.evaluateJavaScript(
                 UnlockScript.forBypassed(Sleuth.settings.bypassedSites, light = true),
-                null
+                GeckoSession.JavaScriptResult { _, _ -> }
             )
         }
-        webView.evaluateJavascript(
+        session.evaluateJavaScript(
             "(function(){var d=document.documentElement;return d.scrollHeight+'|'+d.clientWidth;})();"
         ) { raw ->
             val parts = JsTools.decodeString(raw).split("|")
@@ -746,13 +752,13 @@ class MainActivity : AppCompatActivity(), BrowserHost {
             val contentWidth = parts.getOrNull(1)?.toIntOrNull() ?: 0
             if (contentHeight <= 0 || contentWidth <= 0) {
                 captureViewport()
-                return@evaluateJavascript
+                return@evaluateJavaScript
             }
-            stitchFullPage(webView, contentHeight, contentWidth)
+            stitchFullPage(session, contentHeight, contentWidth)
         }
     }
 
-    private fun stitchFullPage(webView: WebView, contentHeight: Int, contentWidth: Int) {
+    private fun stitchFullPage(session: GeckoSession, contentHeight: Int, contentWidth: Int) {
         val container = binding.webContainer
         val viewWidth = container.width
         val viewHeight = container.height
@@ -771,39 +777,35 @@ class MainActivity : AppCompatActivity(), BrowserHost {
             captureViewport()
             return
         }
-        val startScroll = webView.scrollY
-        webView.scrollTo(0, 0)
-        afterRepaint(webView) {
-            stitchStep(webView, output, totalHeight, 0, viewHeight, scale, startScroll)
+        session.evaluateJavaScript("(function(){window.scrollTo(0,0);})();", GeckoSession.JavaScriptResult { _, _ -> })
+        afterRepaint(container) {
+            stitchStep(session, output, totalHeight, 0, viewHeight, scale)
         }
     }
 
     private fun stitchStep(
-        webView: WebView,
+        session: GeckoSession,
         output: Bitmap,
         totalHeight: Int,
         offset: Int,
         viewHeight: Int,
-        scale: Float,
-        startScroll: Int
+        scale: Float
     ) {
         if (offset >= totalHeight) {
-            webView.scrollTo(0, startScroll)
             openEvidenceLab(output)
             return
         }
         val targetScroll = (offset / scale).toInt()
-        webView.scrollTo(0, targetScroll)
-        afterRepaint(webView) {
+        session.evaluateJavaScript("(function(){window.scrollTo(0,$targetScroll);})();", GeckoSession.JavaScriptResult { _, _ -> })
+        afterRepaint(container) {
             ScreenshotCapturer.capture(this, binding.webContainer) { bitmap ->
                 if (bitmap == null) {
-                    webView.scrollTo(0, startScroll)
                     openEvidenceLab(output)
                     return@capture
                 }
                 val canvas = Canvas(output)
                 canvas.drawBitmap(bitmap, 0f, offset.toFloat(), null)
-                stitchStep(webView, output, totalHeight, offset + viewHeight, viewHeight, scale, startScroll)
+                stitchStep(session, output, totalHeight, offset + viewHeight, viewHeight, scale)
             }
         }
     }
@@ -879,22 +881,22 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     }
 
     private fun probePage(url: String, title: String) {
-        val webView = tabManager.current()?.webView ?: return
-        webView.evaluateJavascript(UnlockScript.PROBE) { raw ->
+        val session = tabManager.current()?.session ?: return
+        session.evaluateJavaScript(UnlockScript.PROBE) { raw ->
             val codes = ProtectionProbe.codes(JsTools.decodeString(raw))
             if (codes.isEmpty()) {
                 if (protectionCodes.isNotEmpty()) {
                     protectionCodes = emptyList()
                     updateProtectionIndicator()
                 }
-                return@evaluateJavascript
+                return@evaluateJavaScript
             }
             // every trick is filed once, however late it turns up
             val fresh = codes.filter { it !in protectionCodes }
             protectionCodes = protectionCodes + fresh
             updateProtectionIndicator()
-            if (fresh.isEmpty()) return@evaluateJavascript
-            val case = armedCaseCache ?: return@evaluateJavascript
+            if (fresh.isEmpty()) return@evaluateJavaScript
+            val case = armedCaseCache ?: return@evaluateJavaScript
             val note = ProtectionProbe.describe(fresh)
             val name = title.ifBlank { url }
             SleuthIO.execute {
@@ -940,9 +942,9 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         if (url == lastRecordedUrl) return
         lastRecordedUrl = url
         val token = ++extractionToken
-        val webView = tabManager.current()?.webView ?: return
-        webView.evaluateJavascript(JsTools.extractTextScript()) { raw ->
-            if (token != extractionToken) return@evaluateJavascript
+        val session = tabManager.current()?.session ?: return
+        session.evaluateJavaScript(JsTools.extractTextScript()) { raw ->
+            if (token != extractionToken) return@evaluateJavaScript
             val text = JsTools.decodeString(raw).trim().take(1500)
             val note = text
             SleuthIO.execute {
@@ -977,12 +979,15 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
     override fun onFileChooser(
         callback: ValueCallback<Array<Uri>>,
-        params: WebChromeClient.FileChooserParams
+        params: Any
     ): Boolean {
         fileChooserCallback?.onReceiveValue(null)
         fileChooserCallback = callback
         return try {
-            val intent = params.createIntent()
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                type = "*/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
             fileChooserLauncher.launch(intent)
             true
         } catch (error: Throwable) {
@@ -1027,12 +1032,12 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         val target = Omnibox.targetFor(rawInput, Sleuth.settings.searchEngine) ?: return
         barBusy = true
         hideKeyboard()
-        val webView = tabManager.current()?.webView
-        if (webView != null) {
+        val session = tabManager.current()?.session
+        if (session != null) {
             // drop whatever is still downloading, the new page matters now
-            webView.stopLoading()
+            session.stop()
             extractionToken++
-            webView.loadUrl(target)
+            session.loadUri(target)
         } else {
             openInNewTab(target)
         }
@@ -1064,9 +1069,9 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     }
 
     private fun updateChrome() {
-        val webView = tabManager.current()?.webView
-        binding.btnBack.isEnabled = webView != null && webView.canGoBack()
-        binding.btnForward.isEnabled = webView != null && webView.canGoForward()
+        val session = tabManager.current()?.session
+        binding.btnBack.isEnabled = session != null && session.canGoBack()
+        binding.btnForward.isEnabled = session != null && session.canGoForward()
         binding.btnBack.alpha = if (binding.btnBack.isEnabled) 1f else 0.35f
         binding.btnForward.alpha = if (binding.btnForward.isEnabled) 1f else 0.35f
         binding.btnVoice.visibility =

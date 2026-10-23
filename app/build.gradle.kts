@@ -90,7 +90,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.0")
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
-    implementation("androidx.webkit:webkit:1.12.1")
+    implementation("org.mozilla.geckoview:geckoview-standard:123.0.20240903095030")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

@@ -2,9 +2,14 @@ package com.sleuth.browser.browser
 
 import android.content.Context
 import android.view.ViewGroup
-import android.webkit.WebView
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoView
 
-class BrowserTab(val id: Long, val webView: WebView) {
+class BrowserTab(
+    val id: Long,
+    val geckoView: GeckoView,
+    val session: GeckoSession
+) {
     var title: String = ""
     var url: String = ""
 }
@@ -25,16 +30,17 @@ class TabManager(
     val size: Int get() = tabs.size
 
     fun newTab(url: String?): BrowserTab {
-        val webView = WebViewFactory.create(context, settings, host)
-        val tab = BrowserTab(nextId++, webView)
+        val geckoView = GeckoViewFactory.create(context, settings, host)
+        val session = geckoView.session!!
+        val tab = BrowserTab(nextId++, geckoView, session)
         tabs.add(tab)
         while (tabs.size > maxTabs) {
             val dropped = tabs.removeAt(0)
-            dropped.webView.stopLoading()
-            dropped.webView.destroy()
+            dropped.session.close()
+            dropped.geckoView.setSession(null)
         }
         if (!url.isNullOrBlank()) {
-            webView.loadUrl(url)
+            session.loadUri(url)
         }
         return tab
     }
@@ -57,8 +63,8 @@ class TabManager(
         val tab = tabs.getOrNull(index) ?: return
         tabs.removeAt(index)
         detach(tab)
-        tab.webView.stopLoading()
-        tab.webView.destroy()
+        tab.session.close()
+        tab.geckoView.setSession(null)
         if (currentIndex >= tabs.size) currentIndex = tabs.size - 1
         if (currentIndex < 0 && tabs.isNotEmpty()) currentIndex = 0
     }
@@ -66,24 +72,20 @@ class TabManager(
     fun destroyAll() {
         for (tab in tabs) {
             detach(tab)
-            tab.webView.stopLoading()
-            tab.webView.destroy()
+            tab.session.close()
+            tab.geckoView.setSession(null)
         }
         tabs.clear()
         currentIndex = -1
     }
 
-    /**
-     * Puts the guard back over every tab, or takes it away, after the user
-     * changed what should be protected.
-     */
     fun refreshGuards() {
         for (tab in tabsSnapshot()) {
-            WebViewFactory.installUnlock(tab.webView, settings)
+            GeckoViewFactory.installUnlock(tab.session, settings)
         }
     }
 
     private fun detach(tab: BrowserTab) {
-        (tab.webView.parent as? ViewGroup)?.removeView(tab.webView)
+        (tab.geckoView.parent as? ViewGroup)?.removeView(tab.geckoView)
     }
 }
