@@ -1,5 +1,6 @@
 package com.sleuth.browser.browser
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
 import android.webkit.ValueCallback
@@ -139,6 +140,7 @@ object GeckoViewFactory {
 
         // GeckoView 154: ActivityContextDelegate is an interface with getActivityContext()
         geckoView.activityContextDelegate = object : GeckoView.ActivityContextDelegate {
+            @SuppressLint("WrongThread")
             override fun getActivityContext(): Context = geckoView.context
         }
     }
