@@ -2,6 +2,7 @@ package com.sleuth.browser.browser
 
 import android.content.Context
 import android.util.Log
+import android.webkit.ValueCallback
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
