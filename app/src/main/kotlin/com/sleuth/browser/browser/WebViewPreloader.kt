@@ -5,7 +5,6 @@ import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
 import org.mozilla.geckoview.GeckoRuntime
-import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.GeckoSession
 
@@ -17,7 +16,8 @@ object WebViewPreloader {
         if (warmed) return
         warmed = true
         try {
-            val runtime = GeckoRuntime.create(context)
+            // Use the shared GeckoRuntime from GeckoViewFactory instead of creating our own
+            val runtime = GeckoViewFactory.getRuntime() ?: GeckoRuntime.create(context)
             val geckoView = GeckoView(context)
             val session = GeckoSession()
             session.open(runtime)
