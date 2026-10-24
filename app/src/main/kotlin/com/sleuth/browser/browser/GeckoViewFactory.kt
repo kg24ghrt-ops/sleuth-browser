@@ -89,10 +89,11 @@ object GeckoViewFactory {
         session.navigationDelegate = object : GeckoSession.NavigationDelegate {
             // Correct signature per GeckoView 154 Javadoc:
             // onLocationChange(session, url, perms, hasUserGesture)
+            // Kotlin platform type: MutableList<GeckoSession.PermissionDelegate.ContentPermission!>
             override fun onLocationChange(
                 session: GeckoSession,
                 url: String?,
-                perms: java.util.List<org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission>,
+                perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>,
                 hasUserGesture: Boolean
             ) {
                 // navigation happened
