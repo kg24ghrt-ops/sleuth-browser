@@ -90,10 +90,21 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("org.mozilla.geckoview:geckoview:154.0.20260824154132")
-    implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.1.21"))
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.2.20"))
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+}
+
+configurations.all {
+    resolutionStrategy {
+        force(
+            "org.jetbrains.kotlin:kotlin-stdlib:2.2.20",
+            "org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.2.20",
+            "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.20",
+            "org.jetbrains.kotlin:kotlin-stdlib-common:2.2.20"
+        )
+    }
 }
