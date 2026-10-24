@@ -8,6 +8,7 @@ import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.WebExtensionController
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import java.util.WeakHashMap
@@ -31,6 +32,7 @@ object GeckoViewFactory {
     private const val TAG = "GeckoViewFactory"
 
     private var geckoRuntime: GeckoRuntime? = null
+    private var ublockInstalled = false
     private val guards = WeakHashMap<GeckoSession, String>()
 
     const val DESKTOP_UA =
@@ -41,6 +43,30 @@ object GeckoViewFactory {
     fun init(context: Context) {
         if (geckoRuntime != null) return
         geckoRuntime = GeckoRuntime.create(context)
+        // Auto-install uBlock Origin built-in extension
+        installUBlockOrigin(context)
+    }
+
+    private fun installUBlockOrigin(context: Context) {
+        if (ublockInstalled) return
+        val runtime = geckoRuntime ?: return
+        try {
+            // uBlock Origin built-in extension expected at assets/ublock/
+            // installBuiltIn installs from resource://android/assets/ublock/
+            WebExtensionController.getInstance(runtime).installBuiltIn("resource://android/assets/ublock/")
+                .then { extensions ->
+                    if (extensions.isNotEmpty()) {
+                        ublockInstalled = true
+                        Log.d(TAG, "uBlock Origin installed successfully")
+                    }
+                }
+                .exceptionally { error ->
+                    Log.w(TAG, "uBlock Origin installation failed: ${error.message}")
+                    null
+                }
+        } catch (e: Throwable) {
+            Log.w(TAG, "uBlock Origin installation error", e)
+        }
     }
 
     fun getRuntime(): GeckoRuntime? = geckoRuntime
@@ -65,7 +91,6 @@ object GeckoViewFactory {
         geckoView.setBackgroundColor(0xFF0D1117.toInt())
 
         // Apply settings via GeckoSessionSettings
-        // GeckoView 154: modify session.settings directly
         val sessionSettings = session.settings
         sessionSettings.allowJavascript = settings.javascript
         sessionSettings.userAgentMode = if (settings.desktopMode) {
@@ -80,7 +105,7 @@ object GeckoViewFactory {
 
         installUnlock(session, settings)
 
-        // Delegates are interfaces in GeckoView 154 - implement without ()
+        // Delegates are interfaces in GeckoView 158 - implement without ()
         session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onProgressChange(session: GeckoSession, progress: Int) {
                 host.onProgressChanged(progress)
@@ -88,9 +113,8 @@ object GeckoViewFactory {
         }
 
         session.navigationDelegate = object : GeckoSession.NavigationDelegate {
-            // Correct signature per GeckoView 154 Javadoc:
+            // Correct signature per GeckoView 158 Javadoc:
             // onLocationChange(session, url, perms, hasUserGesture)
-            // Kotlin platform type: MutableList<GeckoSession.PermissionDelegate.ContentPermission!>
             override fun onLocationChange(
                 session: GeckoSession,
                 url: String?,
@@ -110,7 +134,7 @@ object GeckoViewFactory {
                         return GeckoResult.fromValue(AllowOrDeny.DENY)
                     }
                     if (settings.isProtectionsOn(url)) {
-                        // evaluateJavaScript not available in GeckoView 154
+                        // evaluateJavaScript not available in GeckoView 158
                         // Content scripts would need to be registered via WebExtension
                     }
                 }
@@ -138,7 +162,7 @@ object GeckoViewFactory {
             }
         }
 
-        // GeckoView 154: ActivityContextDelegate is an interface with getActivityContext()
+        // GeckoView 158: ActivityContextDelegate is an interface with getActivityContext()
         geckoView.activityContextDelegate = object : GeckoView.ActivityContextDelegate {
             @SuppressLint("WrongThread")
             override fun getActivityContext(): Context = geckoView.context
@@ -150,12 +174,35 @@ object GeckoViewFactory {
         val script = UnlockScript.forBypassed(settings.bypassedSites)
         guards[session] = script
 
-        // WebExtensionController content script registration not available in GeckoView 154
-        // Would need to use built-in extensions instead
+        // evaluateJavaScript not available in GeckoView 158
+        // Content scripts would need to be registered via WebExtension
     }
 
     fun removeUnlock(session: GeckoSession) {
         guards.remove(session)
-        // WebExtensionController content script unregistration not available in GeckoView 154
+    }
+
+    /** Find text in the current page using GeckoView 158 SessionFinder API. */
+    fun findInPage(session: GeckoSession, query: String, forward: Boolean = true, matchCase: Boolean = false): Boolean {
+        return try {
+            val finder = session.finder
+            val flags = 0 or (if (forward) 0 else GeckoSession.FINDER_FIND_BACKWARDS)
+                        or (if (matchCase) GeckoSession.FINDER_FIND_MATCH_CASE else 0)
+            finder.find(query, flags)
+        } catch (e: Throwable) {
+            Log.w(TAG, "findInPage failed", e)
+            false
+        }
+    }
+
+    /** Clear find-in-page highlights. */
+    fun clearFindInPage(session: GeckoSession): Boolean {
+        return try {
+            session.finder.clear()
+            true
+        } catch (e: Throwable) {
+            Log.w(TAG, "clearFindInPage failed", e)
+            false
+        }
     }
 }

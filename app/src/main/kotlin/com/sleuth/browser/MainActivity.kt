@@ -479,12 +479,16 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         AlertDialog.Builder(this)
             .setTitle(R.string.action_find)
             .setView(input)
-            .setNegativeButton(R.string.action_cancel, null)
+            .setNegativeButton(R.string.action_cancel) { _, _ ->
+                GeckoViewFactory.clearFindInPage(session)
+            }
             .setPositiveButton(R.string.action_ok) { _, _ ->
                 val query = input.text?.toString()?.trim().orEmpty()
                 if (query.isBlank()) return@setPositiveButton
-                // evaluateJavaScript not available in GeckoView 154
-                // Would need to use WebExtension for content script communication
+                val found = GeckoViewFactory.findInPage(session, query)
+                if (!found) {
+                    Toast.makeText(this, R.string.status_no_matches, Toast.LENGTH_SHORT).show()
+                }
             }
             .show()
     }
