@@ -90,6 +90,8 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("org.mozilla.geckoview:geckoview:154.0.20260824154132")
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.1.21"))
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
