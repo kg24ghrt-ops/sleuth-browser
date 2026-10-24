@@ -59,6 +59,10 @@ import com.sleuth.browser.ui.SettingsActivity
 import java.io.File
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoRuntime
+import org.mozilla.geckoview.GeckoSessionSettings
+import org.mozilla.geckoview.ContentBlocking
+import org.mozilla.geckoview.CookieManager
 
 class MainActivity : AppCompatActivity(), BrowserHost {
 
@@ -76,6 +80,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     private var armedCaseCache: CaseFile? = null
     private var tabSheet: BottomSheetDialog? = null
     private var currentUrl = ""
+    private var canGoBack = false
+    private var canGoForward = false
 
     /** Set while the browser is taking the user somewhere, so the bar is left alone. */
     private var barBusy = false
@@ -129,7 +135,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 val session = tabManager.current()?.session
-                if (session != null && session.canGoBack()) {
+                if (session != null && canGoBack) {
                     session.goBack()
                 } else if (tabManager.size > 1) {
                     tabManager.closeAt(tabManager.currentIndex)
@@ -165,7 +171,6 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
     override fun onResume() {
         super.onResume()
-        tabManager.current()?.session?.resume()
         val desktopMode = Sleuth.settings.desktopMode
         val modeChanged = desktopMode != lastDesktopMode
         lastDesktopMode = desktopMode
@@ -184,9 +189,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         super.onPause()
         if (!Sleuth.settings.pauseInBackground) return
         // pages stop running while the app is out of sight
-        for (tab in tabManager.tabsSnapshot()) {
-            tab.session.pause()
-        }
+        // GeckoView handles lifecycle automatically, no manual pause needed
     }
 
     /** Pushes the current preferences into every open tab. */
@@ -198,31 +201,33 @@ class MainActivity : AppCompatActivity(), BrowserHost {
             GeckoViewFactory.MOBILE_UA
         }
         for (tab in tabManager.tabsSnapshot()) {
-            val sessionSettings = tab.session.settings
-            // a setting is only written when it really changed, so the page is
-            // never made to lay itself out again for nothing
-            if (sessionSettings.allowJavaScript != settings.javascript) {
-                sessionSettings.allowJavaScript = settings.javascript
-            }
-            if (sessionSettings.textZoom != (settings.fontScale * 100).toInt()) {
-                sessionSettings.textZoom = (settings.fontScale * 100).toInt()
-            }
-            if (sessionSettings.overrideUserAgent != userAgent) {
-                sessionSettings.overrideUserAgent = userAgent
-            }
-            sessionSettings.userAgentMode = if (settings.desktopMode) {
-                org.mozilla.geckoview.GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
-            } else {
-                org.mozilla.geckoview.GeckoSessionSettings.USER_AGENT_MODE_MOBILE
-            }
-            val contentBlocking = if (settings.blockTrackers) {
-                org.mozilla.geckoview.ContentBlocking.STRICT
-            } else {
-                org.mozilla.geckoview.ContentBlocking.NONE
-            }
-            if (sessionSettings.contentBlocking != contentBlocking) {
-                sessionSettings.contentBlocking = contentBlocking
-            }
+            val sessionSettings = GeckoSessionSettings.Builder()
+                .allowJavascript(settings.javascript)
+                .userAgentMode(if (settings.desktopMode) {
+                    GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
+                } else {
+                    GeckoSessionSettings.USER_AGENT_MODE_MOBILE
+                })
+                .overrideUserAgent(userAgent)
+                .textZoom((settings.fontScale * 100).toInt())
+                .allowThirdPartyCookies(!settings.blockTrackers)
+                .allowJavaScriptOpenWindows(false)
+                .build()
+
+            tab.session.applySettings(sessionSettings)
+
+            val contentBlockingSettings = ContentBlocking.Settings.Builder()
+                .apply {
+                    if (settings.blockTrackers) {
+                        enableTrackersBlocking()
+                        enableCookieBlocking()
+                    } else {
+                        disableTrackersBlocking()
+                        disableCookieBlocking()
+                    }
+                }
+                .build()
+            tab.session.contentBlockingSettings = contentBlockingSettings
         }
     }
 
@@ -589,7 +594,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         val enabled = !Sleuth.settings.incognito
         Sleuth.settings.incognito = enabled
         try {
-            org.mozilla.geckoview.CookieManager.getInstance().removeAllCookies(null)
+            val runtime = GeckoViewFactory.getRuntime()
+            runtime?.cookieManager?.removeAllCookies(null)
         } catch (error: Throwable) {
             // cookies are best effort
         }
@@ -616,7 +622,6 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         binding.webContainer.removeAllViews()
         binding.webContainer.addView(tab.geckoView)
         // a tab that was sleeping in the background has to wake up again
-        tab.session.resume()
         tabManager.select(index)
         updateChrome()
     }
@@ -1026,6 +1031,16 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         return false
     }
 
+    override fun onCanGoBackChanged(canGoBack: Boolean) {
+        this.canGoBack = canGoBack
+        updateChrome()
+    }
+
+    override fun onCanGoForwardChanged(canGoForward: Boolean) {
+        this.canGoForward = canGoForward
+        updateChrome()
+    }
+
     // ------------------------------------------------------------------ utils
 
     private fun navigate(rawInput: String) {
@@ -1070,8 +1085,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
 
     private fun updateChrome() {
         val session = tabManager.current()?.session
-        binding.btnBack.isEnabled = session != null && session.canGoBack()
-        binding.btnForward.isEnabled = session != null && session.canGoForward()
+        binding.btnBack.isEnabled = session != null && canGoBack
+        binding.btnForward.isEnabled = session != null && canGoForward
         binding.btnBack.alpha = if (binding.btnBack.isEnabled) 1f else 0.35f
         binding.btnForward.alpha = if (binding.btnForward.isEnabled) 1f else 0.35f
         binding.btnVoice.visibility =

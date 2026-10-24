@@ -63,8 +63,8 @@ class SettingsActivity : AppCompatActivity() {
                 SleuthIO.execute {
                     try {
                         context?.cacheDir?.listFiles()?.forEach { it.deleteRecursively() }
-                        CookieManager.getInstance().removeAllCookies(null)
                         val runtime = GeckoViewFactory.getRuntime()
+                        runtime?.cookieManager?.removeAllCookies(null)
                         runtime?.clearCache()
                     } catch (error: Throwable) {
                         // cache is best effort
@@ -80,8 +80,8 @@ class SettingsActivity : AppCompatActivity() {
                         context?.cacheDir?.listFiles()?.forEach { it.deleteRecursively() }
                         val evidenceRoot = File(context?.filesDir ?: File("/"), "evidence")
                         evidenceRoot.listFiles()?.forEach { it.deleteRecursively() }
-                        CookieManager.getInstance().removeAllCookies(null)
                         val runtime = GeckoViewFactory.getRuntime()
+                        runtime?.cookieManager?.removeAllCookies(null)
                         runtime?.clearCache()
                     } catch (error: Throwable) {
                         // best effort

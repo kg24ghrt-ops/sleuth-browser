@@ -9,7 +9,6 @@ import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.ContentBlocking
-import org.mozilla.geckoview.PromptDelegate
 import org.mozilla.geckoview.WebExtensionController
 import java.util.WeakHashMap
 
@@ -23,6 +22,8 @@ interface BrowserHost {
     fun onJsDialog(message: String, respond: (Boolean) -> Unit)
     fun onPageError(url: String, description: String)
     fun onExternalUrl(url: String): Boolean
+    fun onCanGoBackChanged(canGoBack: Boolean)
+    fun onCanGoForwardChanged(canGoForward: Boolean)
 }
 
 object GeckoViewFactory {
@@ -58,7 +59,6 @@ object GeckoViewFactory {
         return geckoView
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
     fun configure(
         session: GeckoSession,
         geckoView: GeckoView,
@@ -67,31 +67,53 @@ object GeckoViewFactory {
     ) {
         geckoView.setBackgroundColor(0xFF0D1117.toInt())
 
-        val sessionSettings = session.settings
-        sessionSettings.allowJavascript = settings.javascript
-        sessionSettings.allowLoadLocalContent = false
-        sessionSettings.allowThirdPartyCookies = !settings.blockTrackers
-        sessionSettings.userAgentMode = if (settings.desktopMode) {
-            GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
-        } else {
-            GeckoSessionSettings.USER_AGENT_MODE_MOBILE
-        }
-        sessionSettings.overrideUserAgent = if (settings.desktopMode) DESKTOP_UA else MOBILE_UA
-        sessionSettings.textZoom = (settings.fontScale * 100).toInt()
+        val sessionSettings = GeckoSessionSettings.Builder()
+            .allowJavascript(settings.javascript)
+            .userAgentMode(if (settings.desktopMode) {
+                GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
+            } else {
+                GeckoSessionSettings.USER_AGENT_MODE_MOBILE
+            })
+            .overrideUserAgent(if (settings.desktopMode) DESKTOP_UA else MOBILE_UA)
+            .textZoom((settings.fontScale * 100).toInt())
+            .allowThirdPartyCookies(!settings.blockTrackers)
+            .allowJavaScriptOpenWindows(false)
+            .build()
 
-        val contentBlocking = if (settings.blockTrackers) {
-            ContentBlocking.STRICT
-        } else {
-            ContentBlocking.NONE
-        }
-        sessionSettings.contentBlocking = contentBlocking
-        sessionSettings.allowJavaScriptOpenWindows = false
+        session.applySettings(sessionSettings)
+
+        val contentBlockingSettings = ContentBlocking.Settings.Builder()
+            .apply {
+                if (settings.blockTrackers) {
+                    enableTrackersBlocking()
+                    enableCookieBlocking()
+                } else {
+                    disableTrackersBlocking()
+                    disableCookieBlocking()
+                }
+            }
+            .build()
+        session.contentBlockingSettings = contentBlockingSettings
 
         installUnlock(session, settings)
 
         session.progressDelegate = object : GeckoSession.ProgressDelegate() {
             override fun onProgressChange(session: GeckoSession, progress: Int) {
                 host.onProgressChanged(progress)
+            }
+        }
+
+        session.navigationDelegate = object : GeckoSession.NavigationDelegate() {
+            override fun onLocationChange(session: GeckoSession, url: String) {
+                // navigation happened
+            }
+
+            override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
+                host.onCanGoBackChanged(canGoBack)
+            }
+
+            override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) {
+                host.onCanGoForwardChanged(canGoForward)
             }
         }
 
@@ -102,8 +124,7 @@ object GeckoViewFactory {
 
             override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) {}
 
-            override fun onLoadRequest(session: GeckoSession, request: GeckoSession.ContentDelegate.LoadRequest): GeckoSession.ContentDelegate.LoadResponse {
-                val url = request.uri
+            override fun onLoadRequest(session: GeckoSession, url: String): GeckoSession.ContentDelegate.LoadResponse {
                 if (url.startsWith("http://") || url.startsWith("https://")) {
                     if (settings.isSiteBlocked(url)) {
                         return GeckoSession.ContentDelegate.LoadResponse.Deny
@@ -128,29 +149,6 @@ object GeckoViewFactory {
 
             override fun onPageError(session: GeckoSession, url: String?, error: String?) {
                 host.onPageError(url ?: "", error ?: "")
-            }
-        }
-
-        session.promptDelegate = object : PromptDelegate() {
-            override fun onPrompt(
-                session: GeckoSession,
-                origin: String,
-                message: String,
-                defaultValue: String?,
-                callback: PromptDelegate.PromptCallback
-            ) {
-                host.onJsDialog(message) { ok ->
-                    callback.confirm(ok, defaultValue ?: "")
-                }
-            }
-
-            override fun onAuthPrompt(
-                session: GeckoSession,
-                origin: String,
-                realm: String,
-                callback: PromptDelegate.AuthPromptCallback
-            ) {
-                callback.dismiss()
             }
         }
 
