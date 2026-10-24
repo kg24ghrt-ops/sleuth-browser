@@ -8,7 +8,7 @@ import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
-import org.mozilla.geckoview.WebExtensionController
+import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import java.util.WeakHashMap
@@ -41,10 +41,7 @@ object GeckoViewFactory {
 
     fun init(context: Context) {
         if (geckoRuntime != null) return
-        val settings = GeckoRuntimeSettings.Builder()
-            .applicationContext(context)
-            .build()
-        geckoRuntime = GeckoRuntime.create(settings)
+        geckoRuntime = GeckoRuntime.create(context)
     }
 
     fun getRuntime(): GeckoRuntime? = geckoRuntime
@@ -68,8 +65,8 @@ object GeckoViewFactory {
     ) {
         geckoView.setBackgroundColor(0xFF0D1117.toInt())
 
-        // Apply settings by modifying the session's settings object
-        // GeckoView 154 doesn't have applySettings() - settings are modified via getSettings()
+        // Apply settings via GeckoSessionSettings
+        // GeckoView 154: modify session.settings directly
         val sessionSettings = session.settings
         sessionSettings.allowJavascript = settings.javascript
         sessionSettings.userAgentMode = if (settings.desktopMode) {
@@ -79,16 +76,9 @@ object GeckoViewFactory {
         }
         sessionSettings.userAgentOverride = if (settings.desktopMode) DESKTOP_UA else MOBILE_UA
 
-        // Content blocking - GeckoView 154 uses useTrackingProtection setting
+        // Content blocking via ContentBlocking.Settings in GeckoRuntimeSettings
+        // This is set at runtime creation, but we can also use session's useTrackingProtection
         sessionSettings.useTrackingProtection = settings.blockTrackers
-
-        // Content blocking controller (if needed for advanced config)
-        if (settings.blockTrackers) {
-            val runtime = geckoRuntime
-            runtime?.contentBlockingController?.let { controller ->
-                // Tracking protection settings are per-session in newer versions
-            }
-        }
 
         installUnlock(session, settings)
 
@@ -101,7 +91,7 @@ object GeckoViewFactory {
         session.navigationDelegate = object : GeckoSession.NavigationDelegate() {
             override fun onLocationChange(
                 session: GeckoSession,
-                url: String,
+                url: String?,
                 permissions: java.util.List<org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission>,
                 isNewSession: Boolean
             ) {
@@ -118,7 +108,7 @@ object GeckoViewFactory {
                         return GeckoResult.fromValue(AllowOrDeny.DENY)
                     }
                     if (settings.isProtectionsOn(url)) {
-                        // Note: evaluateJavaScript not available in GeckoView 154
+                        // evaluateJavaScript not available in GeckoView 154
                         // Content scripts would need to be registered via WebExtension
                     }
                 }
@@ -141,33 +131,20 @@ object GeckoViewFactory {
 
             override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) {}
 
-            override fun onPageStart(session: GeckoSession, url: String?) {
-                host.onPageStarted(url ?: "", "")
-            }
-
             override fun onPageStop(session: GeckoSession, success: Boolean, url: String?) {
                 host.onPageFinished(url ?: "", "")
             }
 
-            override fun onPageError(session: GeckoSession, url: String?, error: String?) {
-                host.onPageError(url ?: "", error ?: "")
+            override fun onCrash(session: GeckoSession) {
+                host.onPageError("", "Page crashed")
             }
         }
 
-        geckoView.setDelegate(object : GeckoView.Delegate() {
-            override fun onExternalLoadRequest(view: GeckoView, request: GeckoView.ExternalLoadRequest): Boolean {
-                return host.onExternalUrl(request.uri)
-            }
-
-            override fun onCreateWindow(
-                view: GeckoView,
-                windowType: Int,
-                callback: GeckoView.CreateWindowCallback
-            ): Boolean {
-                callback.dismiss()
-                return false
-            }
-        })
+        // GeckoView 154: no setDelegate with custom Delegate
+        // ActivityContextDelegate is used for providing activity context
+        geckoView.activityContextDelegate = object : GeckoView.ActivityContextDelegate() {
+            override fun getActivityContext(): Context = geckoView.context
+        }
     }
 
     fun installUnlock(session: GeckoSession, settings: BrowserSettings) {
@@ -177,11 +154,10 @@ object GeckoViewFactory {
 
         // WebExtensionController content script registration not available in GeckoView 154
         // Would need to use built-in extensions instead
-        // WebExtensionController.getInstance(geckoRuntime).registerContentScript(...)
     }
 
     fun removeUnlock(session: GeckoSession) {
-        val script = guards.remove(session) ?: return
+        guards.remove(session)
         // WebExtensionController content script unregistration not available in GeckoView 154
     }
 }

@@ -17,10 +17,7 @@ object WebViewPreloader {
         if (warmed) return
         warmed = true
         try {
-            val settings = GeckoRuntimeSettings.Builder()
-                .applicationContext(context)
-                .build()
-            val runtime = GeckoRuntime.create(settings)
+            val runtime = GeckoRuntime.create(context)
             val geckoView = GeckoView(context)
             val session = GeckoSession()
             session.open(runtime)
