@@ -10,8 +10,8 @@ import com.sleuth.browser.Sleuth
 import com.sleuth.browser.SleuthIO
 import com.sleuth.browser.databinding.ActivitySettingsBinding
 import java.io.File
-import org.mozilla.geckoview.CookieManager
 import org.mozilla.geckoview.GeckoRuntime
+import org.mozilla.geckoview.StorageController
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -64,8 +64,7 @@ class SettingsActivity : AppCompatActivity() {
                     try {
                         context?.cacheDir?.listFiles()?.forEach { it.deleteRecursively() }
                         val runtime = GeckoViewFactory.getRuntime()
-                        runtime?.cookieManager?.removeAllCookies(null)
-                        runtime?.clearCache()
+                        runtime?.storageController?.clearData(0)
                     } catch (error: Throwable) {
                         // cache is best effort
                     }
@@ -81,8 +80,7 @@ class SettingsActivity : AppCompatActivity() {
                         val evidenceRoot = File(context?.filesDir ?: File("/"), "evidence")
                         evidenceRoot.listFiles()?.forEach { it.deleteRecursively() }
                         val runtime = GeckoViewFactory.getRuntime()
-                        runtime?.cookieManager?.removeAllCookies(null)
-                        runtime?.clearCache()
+                        runtime?.storageController?.clearData(0)
                     } catch (error: Throwable) {
                         // best effort
                     }

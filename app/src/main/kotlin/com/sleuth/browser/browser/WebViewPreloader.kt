@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.GeckoSession
 
 object WebViewPreloader {
 
@@ -21,9 +22,12 @@ object WebViewPreloader {
                 .build()
             val runtime = GeckoRuntime.create(settings)
             val geckoView = GeckoView(context)
-            geckoView.setSession(null)
+            val session = GeckoSession()
+            session.open(runtime)
+            geckoView.setSession(session)
             Handler(Looper.getMainLooper()).postDelayed({
                 try {
+                    session.close()
                     (geckoView.parent as? ViewGroup)?.removeView(geckoView)
                 } catch (error: Throwable) {
                 }

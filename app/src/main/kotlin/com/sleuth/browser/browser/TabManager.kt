@@ -37,7 +37,6 @@ class TabManager(
         while (tabs.size > maxTabs) {
             val dropped = tabs.removeAt(0)
             dropped.session.close()
-            dropped.geckoView.setSession(null)
         }
         if (!url.isNullOrBlank()) {
             session.loadUri(url)
@@ -64,7 +63,6 @@ class TabManager(
         tabs.removeAt(index)
         detach(tab)
         tab.session.close()
-        tab.geckoView.setSession(null)
         if (currentIndex >= tabs.size) currentIndex = tabs.size - 1
         if (currentIndex < 0 && tabs.isNotEmpty()) currentIndex = 0
     }
@@ -73,7 +71,6 @@ class TabManager(
         for (tab in tabs) {
             detach(tab)
             tab.session.close()
-            tab.geckoView.setSession(null)
         }
         tabs.clear()
         currentIndex = -1

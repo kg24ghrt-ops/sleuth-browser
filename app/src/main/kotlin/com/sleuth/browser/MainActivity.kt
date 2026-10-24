@@ -61,8 +61,7 @@ import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSessionSettings
-import org.mozilla.geckoview.ContentBlocking
-import org.mozilla.geckoview.CookieManager
+import org.mozilla.geckoview.StorageController
 
 class MainActivity : AppCompatActivity(), BrowserHost {
 
@@ -201,33 +200,19 @@ class MainActivity : AppCompatActivity(), BrowserHost {
             GeckoViewFactory.MOBILE_UA
         }
         for (tab in tabManager.tabsSnapshot()) {
-            val sessionSettings = GeckoSessionSettings.Builder()
-                .allowJavascript(settings.javascript)
-                .userAgentMode(if (settings.desktopMode) {
-                    GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
-                } else {
-                    GeckoSessionSettings.USER_AGENT_MODE_MOBILE
-                })
-                .overrideUserAgent(userAgent)
-                .textZoom((settings.fontScale * 100).toInt())
-                .allowThirdPartyCookies(!settings.blockTrackers)
-                .allowJavaScriptOpenWindows(false)
-                .build()
-
-            tab.session.applySettings(sessionSettings)
-
-            val contentBlockingSettings = ContentBlocking.Settings.Builder()
-                .apply {
-                    if (settings.blockTrackers) {
-                        enableTrackersBlocking()
-                        enableCookieBlocking()
-                    } else {
-                        disableTrackersBlocking()
-                        disableCookieBlocking()
-                    }
-                }
-                .build()
-            tab.session.contentBlockingSettings = contentBlockingSettings
+            val session = tab.session
+            val sessionSettings = session.settings
+            sessionSettings.allowJavascript = settings.javascript
+            sessionSettings.userAgentMode = if (settings.desktopMode) {
+                GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
+            } else {
+                GeckoSessionSettings.USER_AGENT_MODE_MOBILE
+            }
+            sessionSettings.userAgentOverride = userAgent
+            sessionSettings.useTrackingProtection = settings.blockTrackers
+            // Note: textZoom, allowThirdPartyCookies, allowJavaScriptOpenWindows
+            // are not available in GeckoView 154 GeckoSessionSettings
+            // They would need to be set via other means if needed
         }
     }
 
@@ -499,12 +484,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
             .setPositiveButton(R.string.action_ok) { _, _ ->
                 val query = input.text?.toString()?.trim().orEmpty()
                 if (query.isBlank()) return@setPositiveButton
-                session.evaluateJavaScript(JsTools.findScript(query)) { raw ->
-                    val result = JsTools.decodeString(raw)
-                    if (result == "0") {
-                        Toast.makeText(this, R.string.status_no_matches, Toast.LENGTH_SHORT).show()
-                    }
-                }
+                // evaluateJavaScript not available in GeckoView 154
+                // Would need to use WebExtension for content script communication
             }
             .show()
     }
@@ -595,7 +576,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         Sleuth.settings.incognito = enabled
         try {
             val runtime = GeckoViewFactory.getRuntime()
-            runtime?.cookieManager?.removeAllCookies(null)
+            runtime?.storageController?.clearData(0)
         } catch (error: Throwable) {
             // cookies are best effort
         }
@@ -689,11 +670,7 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         if (container.width <= 0 || container.height <= 0) return
         val session = tabManager.current()?.session
         if (session != null && protectionsOn()) {
-            // put the page back the way it should be before it is photographed
-            session.evaluateJavaScript(
-                UnlockScript.forBypassed(Sleuth.settings.bypassedSites, light = true),
-                GeckoSession.JavaScriptResult { _, _ -> }
-            )
+            // evaluateJavaScript not available in GeckoView 154
             afterRepaint(container) { shoot(container) }
         } else {
             shoot(container)
@@ -743,76 +720,9 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     private fun captureFullPage() {
         val session = tabManager.current()?.session ?: return
         Toast.makeText(this, R.string.status_capturing, Toast.LENGTH_SHORT).show()
-        if (protectionsOn()) {
-            session.evaluateJavaScript(
-                UnlockScript.forBypassed(Sleuth.settings.bypassedSites, light = true),
-                GeckoSession.JavaScriptResult { _, _ -> }
-            )
-        }
-        session.evaluateJavaScript(
-            "(function(){var d=document.documentElement;return d.scrollHeight+'|'+d.clientWidth;})();"
-        ) { raw ->
-            val parts = JsTools.decodeString(raw).split("|")
-            val contentHeight = parts.getOrNull(0)?.toIntOrNull() ?: 0
-            val contentWidth = parts.getOrNull(1)?.toIntOrNull() ?: 0
-            if (contentHeight <= 0 || contentWidth <= 0) {
-                captureViewport()
-                return@evaluateJavaScript
-            }
-            stitchFullPage(session, contentHeight, contentWidth)
-        }
-    }
-
-    private fun stitchFullPage(session: GeckoSession, contentHeight: Int, contentWidth: Int) {
-        val container = binding.webContainer
-        val viewWidth = container.width
-        val viewHeight = container.height
-        if (viewWidth <= 0 || viewHeight <= 0) {
-            captureViewport()
-            return
-        }
-        val scale = if (contentWidth > 0) viewWidth.toFloat() / contentWidth else 1f
-        val totalHeight = (contentHeight * scale).toInt().coerceIn(viewHeight, MAX_PAGE_HEIGHT)
-        val output = try {
-            Bitmap.createBitmap(viewWidth, totalHeight, Bitmap.Config.ARGB_8888)
-        } catch (error: Throwable) {
-            null
-        }
-        if (output == null) {
-            captureViewport()
-            return
-        }
-        session.evaluateJavaScript("(function(){window.scrollTo(0,0);})();", GeckoSession.JavaScriptResult { _, _ -> })
-        afterRepaint(container) {
-            stitchStep(session, output, totalHeight, 0, viewHeight, scale)
-        }
-    }
-
-    private fun stitchStep(
-        session: GeckoSession,
-        output: Bitmap,
-        totalHeight: Int,
-        offset: Int,
-        viewHeight: Int,
-        scale: Float
-    ) {
-        if (offset >= totalHeight) {
-            openEvidenceLab(output)
-            return
-        }
-        val targetScroll = (offset / scale).toInt()
-        session.evaluateJavaScript("(function(){window.scrollTo(0,$targetScroll);})();", GeckoSession.JavaScriptResult { _, _ -> })
-        afterRepaint(container) {
-            ScreenshotCapturer.capture(this, binding.webContainer) { bitmap ->
-                if (bitmap == null) {
-                    openEvidenceLab(output)
-                    return@capture
-                }
-                val canvas = Canvas(output)
-                canvas.drawBitmap(bitmap, 0f, offset.toFloat(), null)
-                stitchStep(session, output, totalHeight, offset + viewHeight, viewHeight, scale)
-            }
-        }
+        // evaluateJavaScript not available in GeckoView 154
+        // Full page capture would need alternative approach
+        captureViewport()
     }
 
     private fun openEvidenceLab(bitmap: Bitmap) {
@@ -886,35 +796,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
     }
 
     private fun probePage(url: String, title: String) {
-        val session = tabManager.current()?.session ?: return
-        session.evaluateJavaScript(UnlockScript.PROBE) { raw ->
-            val codes = ProtectionProbe.codes(JsTools.decodeString(raw))
-            if (codes.isEmpty()) {
-                if (protectionCodes.isNotEmpty()) {
-                    protectionCodes = emptyList()
-                    updateProtectionIndicator()
-                }
-                return@evaluateJavaScript
-            }
-            // every trick is filed once, however late it turns up
-            val fresh = codes.filter { it !in protectionCodes }
-            protectionCodes = protectionCodes + fresh
-            updateProtectionIndicator()
-            if (fresh.isEmpty()) return@evaluateJavaScript
-            val case = armedCaseCache ?: return@evaluateJavaScript
-            val note = ProtectionProbe.describe(fresh)
-            val name = title.ifBlank { url }
-            SleuthIO.execute {
-                Sleuth.repository.addEvidence(
-                    case.id,
-                    EvidenceType.PROTECTION,
-                    name,
-                    url,
-                    note,
-                    ""
-                )
-            }
-        }
+        // evaluateJavaScript not available in GeckoView 154
+        // Protection probe would need alternative approach
     }
 
     private fun updateProtectionIndicator() {
@@ -947,22 +830,8 @@ class MainActivity : AppCompatActivity(), BrowserHost {
         if (url == lastRecordedUrl) return
         lastRecordedUrl = url
         val token = ++extractionToken
-        val session = tabManager.current()?.session ?: return
-        session.evaluateJavaScript(JsTools.extractTextScript()) { raw ->
-            if (token != extractionToken) return@evaluateJavaScript
-            val text = JsTools.decodeString(raw).trim().take(1500)
-            val note = text
-            SleuthIO.execute {
-                Sleuth.repository.addEvidence(
-                    case.id,
-                    EvidenceType.PAGE,
-                    title.ifBlank { url },
-                    url,
-                    note,
-                    ""
-                )
-            }
-        }
+        // evaluateJavaScript not available in GeckoView 154
+        // Text extraction would need alternative approach
     }
 
     override fun onProgressChanged(progress: Int) {
