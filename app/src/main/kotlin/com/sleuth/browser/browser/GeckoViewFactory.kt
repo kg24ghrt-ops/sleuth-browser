@@ -79,13 +79,14 @@ object GeckoViewFactory {
 
         installUnlock(session, settings)
 
-        session.progressDelegate = object : GeckoSession.ProgressDelegate() {
+        // Delegates are interfaces in GeckoView 154 - implement without ()
+        session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onProgressChange(session: GeckoSession, progress: Int) {
                 host.onProgressChanged(progress)
             }
         }
 
-        session.navigationDelegate = object : GeckoSession.NavigationDelegate() {
+        session.navigationDelegate = object : GeckoSession.NavigationDelegate {
             // Correct signature per GeckoView 154 Javadoc:
             // onLocationChange(session, url, perms, hasUserGesture)
             override fun onLocationChange(
@@ -123,7 +124,7 @@ object GeckoViewFactory {
             }
         }
 
-        session.contentDelegate = object : GeckoSession.ContentDelegate() {
+        session.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onTitleChange(session: GeckoSession, title: String?) {
                 host.onTitleChanged(title ?: "")
             }
