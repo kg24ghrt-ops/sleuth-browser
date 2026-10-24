@@ -8,6 +8,7 @@ import androidx.preference.PreferenceFragmentCompat
 import com.sleuth.browser.R
 import com.sleuth.browser.Sleuth
 import com.sleuth.browser.SleuthIO
+import com.sleuth.browser.browser.GeckoViewFactory
 import com.sleuth.browser.databinding.ActivitySettingsBinding
 import java.io.File
 import org.mozilla.geckoview.GeckoRuntime

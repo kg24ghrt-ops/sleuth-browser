@@ -4,11 +4,9 @@ import android.content.Context
 import android.util.Log
 import android.webkit.ValueCallback
 import org.mozilla.geckoview.GeckoRuntime
-import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
-import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import java.util.WeakHashMap
@@ -76,8 +74,7 @@ object GeckoViewFactory {
         }
         sessionSettings.userAgentOverride = if (settings.desktopMode) DESKTOP_UA else MOBILE_UA
 
-        // Content blocking via ContentBlocking.Settings in GeckoRuntimeSettings
-        // This is set at runtime creation, but we can also use session's useTrackingProtection
+        // Content blocking via session's useTrackingProtection
         sessionSettings.useTrackingProtection = settings.blockTrackers
 
         installUnlock(session, settings)
@@ -89,11 +86,13 @@ object GeckoViewFactory {
         }
 
         session.navigationDelegate = object : GeckoSession.NavigationDelegate() {
+            // Correct signature per GeckoView 154 Javadoc:
+            // onLocationChange(session, url, perms, hasUserGesture)
             override fun onLocationChange(
                 session: GeckoSession,
                 url: String?,
-                permissions: java.util.List<org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission>,
-                isNewSession: Boolean
+                perms: java.util.List<org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission>,
+                hasUserGesture: Boolean
             ) {
                 // navigation happened
             }
@@ -131,18 +130,13 @@ object GeckoViewFactory {
 
             override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) {}
 
-            override fun onPageStop(session: GeckoSession, success: Boolean, url: String?) {
-                host.onPageFinished(url ?: "", "")
-            }
-
             override fun onCrash(session: GeckoSession) {
                 host.onPageError("", "Page crashed")
             }
         }
 
-        // GeckoView 154: no setDelegate with custom Delegate
-        // ActivityContextDelegate is used for providing activity context
-        geckoView.activityContextDelegate = object : GeckoView.ActivityContextDelegate() {
+        // GeckoView 154: ActivityContextDelegate is an interface with getActivityContext()
+        geckoView.activityContextDelegate = object : GeckoView.ActivityContextDelegate {
             override fun getActivityContext(): Context = geckoView.context
         }
     }
